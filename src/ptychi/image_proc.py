@@ -11,6 +11,7 @@ import torch.signal
 
 import ptychi.maths as pmath
 from ptychi.api.types import ComplexTensor, RealTensor
+from ptychi.device import AcceleratorModuleWrapper
 from ptychi.timing.timer_utils import timer, InlineTimer
 
 class PlacePatchesProtocol(Protocol):
@@ -25,9 +26,60 @@ class ExtractPatchesProtocol(Protocol):
 
 logger = logging.getLogger(__name__)
 
+_PATCH_OFFSET_CACHE: dict[tuple[torch.device, int, int, int], Tensor] = {}
+_FFT_FREQ_GRID_CACHE: dict[tuple[torch.device, torch.dtype, int, int], tuple[Tensor, Tensor]] = {}
+_SPATIAL_GRID_CACHE: dict[tuple[torch.device, int, int], tuple[Tensor, Tensor]] = {}
+
+
+def _patch_linear_indices(
+    sy: Tensor, sx: Tensor, patch_size: Tuple[int, int], image_width: int
+) -> Tensor:
+    """Build linear indices for extracting or placing a batch of 2D patches."""
+    patch_h, patch_w = patch_size
+    sy = sy.to(torch.long)
+    sx = sx.to(torch.long)
+    cache_key = (sy.device, patch_h, patch_w, image_width)
+    patch_offsets = _PATCH_OFFSET_CACHE.get(cache_key)
+    if patch_offsets is None:
+        y_offsets = torch.arange(patch_h, device=sy.device, dtype=torch.long) * image_width
+        x_offsets = torch.arange(patch_w, device=sx.device, dtype=torch.long)
+        patch_offsets = (y_offsets[:, None] + x_offsets[None, :]).reshape(-1)
+        _PATCH_OFFSET_CACHE[cache_key] = patch_offsets
+    start_offsets = sy * image_width + sx
+    return start_offsets[:, None] + patch_offsets[None, :]
+
+
+def _fft_frequency_grid(device: torch.device, height: int, width: int) -> tuple[Tensor, Tensor]:
+    dtype = torch.get_default_dtype()
+    cache_key = (device, dtype, height, width)
+    grid = _FFT_FREQ_GRID_CACHE.get(cache_key)
+    if grid is None:
+        grid = torch.meshgrid(
+            torch.fft.fftfreq(height, device=device),
+            torch.fft.fftfreq(width, device=device),
+            indexing="ij",
+        )
+        _FFT_FREQ_GRID_CACHE[cache_key] = grid
+    return grid
+
+
+def _spatial_grid(device: torch.device, height: int, width: int) -> tuple[Tensor, Tensor]:
+    cache_key = (device, height, width)
+    grid = _SPATIAL_GRID_CACHE.get(cache_key)
+    if grid is None:
+        grid = torch.meshgrid(
+            torch.arange(height, device=device),
+            torch.arange(width, device=device),
+            indexing="ij",
+        )
+        _SPATIAL_GRID_CACHE[cache_key] = grid
+    return grid
+
 
 @timer()
-def batch_slice(image: Tensor, sy: Tensor, sx: Tensor, patch_size: Tuple[int, int]) -> Tensor:
+def batch_slice(
+    image: Tensor, sy: Tensor, sx: Tensor, patch_size: Tuple[int, int], check_bounds: bool = True
+) -> Tensor:
     """
     Slice patches from an image at given window positions. The patch size is determined
     from the starting and ending coordinates in each direction, and is assumed to be
@@ -50,7 +102,7 @@ def batch_slice(image: Tensor, sy: Tensor, sx: Tensor, patch_size: Tuple[int, in
         A tensor of shape (N, h, w) containing the extracted patches.
     """
     h, w = image.shape[-2:]
-    if (
+    if check_bounds and (
         sy.min() < 0 
         or sy.max() + patch_size[0] > image.shape[-2] 
         or sx.min() < 0 
@@ -58,15 +110,11 @@ def batch_slice(image: Tensor, sy: Tensor, sx: Tensor, patch_size: Tuple[int, in
     ):
         raise ValueError("Patch indices are out of bounds.")
     
-    x = torch.arange(patch_size[1], device=sx.device)[None, :]
-    y = torch.arange(patch_size[0], device=sy.device)[None, :]
-    x = x.expand(len(sx), x.shape[1])
-    y = y.expand(len(sy), y.shape[1])
-    x = x + sx[:, None]
-    y = y + sy[:, None]
-    inds = (y * w).unsqueeze(-1) + x.unsqueeze(1)
-    patches = image.view(-1)[inds.view(-1)]
+    inds = _patch_linear_indices(sy, sx, patch_size, w)
+    patches = image.reshape(-1)[inds.reshape(-1)]
     patches = patches.reshape(len(sy), patch_size[0], patch_size[1])
+    if not check_bounds and patches.is_cuda:
+        AcceleratorModuleWrapper.get_module().synchronize()
     return patches
     
 
@@ -76,7 +124,8 @@ def batch_put(
     patches: Tensor, 
     sy: Tensor, 
     sx: Tensor, 
-    op: Literal["add", "set"] = "add"
+    op: Literal["add", "set"] = "add",
+    check_bounds: bool = True,
 ) -> Tensor:
     """
     Slice patches from an image at given window positions. The patch size is assumed 
@@ -102,7 +151,7 @@ def batch_put(
         A tensor of shape (H, W) containing the image with patches added or set.
     """
     h, w = image.shape[-2:]
-    if (
+    if check_bounds and (
         sy.min() < 0 
         or sy.max() + patches.shape[-2] > image.shape[-2] 
         or sx.min() < 0 
@@ -111,13 +160,7 @@ def batch_put(
         raise ValueError("Patch indices are out of bounds.")
     
     patch_size = patches.shape[-2:]
-    x = torch.arange(patch_size[1], device=sx.device)[None, :]
-    y = torch.arange(patch_size[0], device=sy.device)[None, :]
-    x = x.expand(len(sx), x.shape[1])
-    y = y.expand(len(sy), y.shape[1])
-    x = x + sx[:, None]
-    y = y + sy[:, None]
-    inds = (y * w).unsqueeze(-1) + x.unsqueeze(1)
+    inds = _patch_linear_indices(sy, sx, patch_size, w)
     image = image.reshape(-1)
     
     try:
@@ -128,11 +171,13 @@ def batch_put(
     if pmath.get_allow_nondeterministic_algorithms():
         # scatter_add_ and scatter_ are non-deterministic but faster.
         if op == "add":
-            image.scatter_add_(0, inds.view(-1), patches_flattened)
+            image.scatter_add_(0, inds.reshape(-1), patches_flattened)
         else:
-            image.scatter_(0, inds.view(-1), patches_flattened)
+            image.scatter_(0, inds.reshape(-1), patches_flattened)
     else:
-        image.index_put_((inds.view(-1),), patches_flattened, accumulate=(op == "add"))
+        image.index_put_((inds.reshape(-1),), patches_flattened, accumulate=(op == "add"))
+    if not check_bounds and image.is_cuda:
+        AcceleratorModuleWrapper.get_module().synchronize()
     return image.reshape(h, w)
 
 
@@ -182,7 +227,7 @@ def extract_patches_integer(
         sys = sys + pad_lengths[2]
         sxs = sxs + pad_lengths[0]
     
-    patches = batch_slice(image, sys, sxs, patch_size=shape)
+    patches = batch_slice(image, sys, sxs, patch_size=shape, check_bounds=False)
     return patches
 
 
@@ -239,7 +284,7 @@ def place_patches_integer(
         sys = sys + pad_lengths[2]
         sxs = sxs + pad_lengths[0]
     
-    image = batch_put(image, patches, sys, sxs, op=op)
+    image = batch_put(image, patches, sys, sxs, op=op, check_bounds=False)
     if any(pad_lengths):
         image = image[
             pad_lengths[2] : image.shape[0] - pad_lengths[3],
@@ -298,7 +343,9 @@ def extract_patches_fourier_shift(
     sxs = sxs + pad_lengths[0]
     exs = exs + pad_lengths[0]
 
-    patches = batch_slice(image, sys, sxs, patch_size=[shape[i] + 2 * pad for i in range(2)])
+    patches = batch_slice(
+        image, sys, sxs, patch_size=[shape[i] + 2 * pad for i in range(2)], check_bounds=False
+    )
 
     # Apply Fourier shift to account for fractional shifts
     if not torch.allclose(fractional_shifts, torch.zeros_like(fractional_shifts), atol=1e-7):
@@ -400,7 +447,7 @@ def place_patches_fourier_shift(
 
     inline_timer = InlineTimer("add or set patches on image")
     inline_timer.start()
-    image = batch_put(image, patches, sys, sxs, op=op)
+    image = batch_put(image, patches, sys, sxs, op=op, check_bounds=False)
     inline_timer.end()
 
     # Undo padding
@@ -593,18 +640,15 @@ def fourier_shift(images: Tensor, shifts: Tensor, strictly_preserve_zeros: bool 
         zero_mask = zero_mask.float()
         zero_mask_shifted = fourier_shift(zero_mask, shifts, strictly_preserve_zeros=False)
     ft_images = pmath.fft2_precise(images)
-    freq_y, freq_x = torch.meshgrid(
-        torch.fft.fftfreq(images.shape[-2]), torch.fft.fftfreq(images.shape[-1]), indexing="ij"
-    )
-    freq_x = freq_x.to(ft_images.device)
-    freq_y = freq_y.to(ft_images.device)
-    freq_x = freq_x.repeat(images.shape[0], 1, 1)
-    freq_y = freq_y.repeat(images.shape[0], 1, 1)
+    freq_y, freq_x = _fft_frequency_grid(ft_images.device, images.shape[-2], images.shape[-1])
     mult = torch.exp(
         1j
         * -2
         * torch.pi
-        * (freq_x * shifts[:, 1].view(-1, 1, 1) + freq_y * shifts[:, 0].view(-1, 1, 1))
+        * (
+            freq_x[None] * shifts[:, 1].to(ft_images.device).view(-1, 1, 1)
+            + freq_y[None] * shifts[:, 0].to(ft_images.device).view(-1, 1, 1)
+        )
     )
     ft_images = ft_images * mult
     shifted_images = pmath.ifft2_precise(ft_images)
@@ -633,15 +677,11 @@ def bilinear_shift(images: Tensor, shifts: Tensor) -> Tensor:
     """
     if torch.allclose(shifts, torch.zeros_like(shifts)):
         return images
-    y, x = torch.meshgrid(torch.arange(images.shape[-2]), torch.arange(images.shape[-1]), indexing="ij")
-    y = y.to(images.device)
-    x = x.to(images.device)
-    y = y.repeat(images.shape[0], 1, 1)
-    x = x.repeat(images.shape[0], 1, 1)
+    y, x = _spatial_grid(images.device, images.shape[-2], images.shape[-1])
     
     # We want to sample the image at these positions.
-    y = y - shifts[:, 0].view(-1, 1, 1)
-    x = x - shifts[:, 1].view(-1, 1, 1)
+    y = y[None] - shifts[:, 0].to(images.device).view(-1, 1, 1)
+    x = x[None] - shifts[:, 1].to(images.device).view(-1, 1, 1)
     
     y_f = y.floor().int()
     y_c = (y + 1).floor().int()
@@ -659,12 +699,14 @@ def bilinear_shift(images: Tensor, shifts: Tensor) -> Tensor:
     x_c = x_c.clip(0, images.shape[-1] - 1).view(-1)
     
     orig_shape = images.shape
-    batch_inds = torch.arange(images.shape[0]).int().repeat_interleave(images.shape[-1] * images.shape[-2])
+    batch_inds = torch.arange(images.shape[0], device=images.device).repeat_interleave(
+        images.shape[-1] * images.shape[-2]
+    )
     images = \
-        w_00.view(-1) * images[batch_inds, y_f, x_f] + \
-        w_01.view(-1) * images[batch_inds, y_f, x_c] + \
-        w_10.view(-1) * images[batch_inds, y_c, x_f] + \
-        w_11.view(-1) * images[batch_inds, y_c, x_c]
+        w_00.reshape(-1) * images[batch_inds, y_f, x_f] + \
+        w_01.reshape(-1) * images[batch_inds, y_f, x_c] + \
+        w_10.reshape(-1) * images[batch_inds, y_c, x_f] + \
+        w_11.reshape(-1) * images[batch_inds, y_c, x_c]
     images = images.reshape(orig_shape)
     return images
 
@@ -675,15 +717,11 @@ def adjoint_bilinear_shift(images: Tensor, shifts: Tensor) -> Tensor:
     """
     if torch.allclose(shifts, torch.zeros_like(shifts)):
         return images
-    y, x = torch.meshgrid(torch.arange(images.shape[-2]), torch.arange(images.shape[-1]), indexing="ij")
-    y = y.to(images.device)
-    x = x.to(images.device)
-    y = y.repeat(images.shape[0], 1, 1)
-    x = x.repeat(images.shape[0], 1, 1)
+    y, x = _spatial_grid(images.device, images.shape[-2], images.shape[-1])
     
     # We want to sample the image at these positions.
-    y = y - shifts[:, 0].view(-1, 1, 1)
-    x = x - shifts[:, 1].view(-1, 1, 1)
+    y = y[None] - shifts[:, 0].to(images.device).view(-1, 1, 1)
+    x = x[None] - shifts[:, 1].to(images.device).view(-1, 1, 1)
     
     y_f = y.floor().int()
     y_c = (y + 1).floor().int()
@@ -701,13 +739,15 @@ def adjoint_bilinear_shift(images: Tensor, shifts: Tensor) -> Tensor:
     x_c = x_c.clip(0, images.shape[-1] - 1).view(-1)
     
     orig_shape = images.shape
-    batch_inds = torch.arange(images.shape[0]).int().repeat_interleave(images.shape[-1] * images.shape[-2])
+    batch_inds = torch.arange(images.shape[0], device=images.device).repeat_interleave(
+        images.shape[-1] * images.shape[-2]
+    )
     
     adjoint = torch.zeros_like(images)
-    adjoint.index_put_((batch_inds, y_f, x_f), (w_00 * images).view(-1), accumulate=True)
-    adjoint.index_put_((batch_inds, y_f, x_c), (w_01 * images).view(-1), accumulate=True)
-    adjoint.index_put_((batch_inds, y_c, x_f), (w_10 * images).view(-1), accumulate=True)
-    adjoint.index_put_((batch_inds, y_c, x_c), (w_11 * images).view(-1), accumulate=True)
+    adjoint.index_put_((batch_inds, y_f, x_f), (w_00 * images).reshape(-1), accumulate=True)
+    adjoint.index_put_((batch_inds, y_f, x_c), (w_01 * images).reshape(-1), accumulate=True)
+    adjoint.index_put_((batch_inds, y_c, x_f), (w_10 * images).reshape(-1), accumulate=True)
+    adjoint.index_put_((batch_inds, y_c, x_c), (w_11 * images).reshape(-1), accumulate=True)
     adjoint = adjoint.reshape(orig_shape)
     return adjoint
     

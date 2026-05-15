@@ -41,12 +41,37 @@ def trim_mean(
     ub = torch.quantile(x, 1 - fraction, dim=dim, keepdim=True)
     mask = (x >= lb) & (x <= ub)
 
-    mask_check = torch.sum(mask, dim=dim)
-    mask_check = torch.all(mask_check > 0)
+    if dim is None:
+        mask_count = torch.sum(mask)
+    else:
+        mask_count = torch.sum(mask, dim=dim, keepdim=True)
+    mask_check = torch.all(mask_count > 0)
     if mask_check:
-        x = x.clone()
-        x[~mask] = torch.nan
-        return torch.nanmean(x, dim=dim, keepdim=keepdim)
+        if dim is None:
+            trimmed_mean = (
+                torch.sum(torch.where(mask, x, torch.zeros((), device=x.device, dtype=x.dtype)))
+                / mask_count
+            )
+            if keepdim:
+                trimmed_mean = trimmed_mean.reshape((1,) * x.ndim)
+            return trimmed_mean
+
+        trimmed_sum = torch.sum(
+            torch.where(mask, x, torch.zeros((), device=x.device, dtype=x.dtype)),
+            dim=dim,
+            keepdim=True,
+        )
+        trimmed_mean = trimmed_sum / mask_count
+        if keepdim:
+            return trimmed_mean
+
+        try:
+            dims = tuple(a % x.ndim for a in dim)
+        except TypeError:
+            dims = (dim % x.ndim,)
+        for d in sorted(dims, reverse=True):
+            trimmed_mean = trimmed_mean.squeeze(d)
+        return trimmed_mean
     else:
         return torch.mean(x, dim=dim, keepdim=keepdim)
     
@@ -220,14 +245,21 @@ def inner(x, y, dim=None, keepdims=False):
     return (x * y.conj()).sum(dim, keepdims=keepdims)
 
 
+def abs2(x):
+    """Return squared magnitude without materializing `abs(x)` first."""
+    if x.dtype.is_complex:
+        return (x * x.conj()).real
+    return x * x
+
+
 def mnorm(x, dim=-1, keepdims=False):
     """Return the vector 2-norm of x but replace sum with mean."""
-    return torch.sqrt(torch.mean((x * x.conj()).real, dim=dim, keepdims=keepdims))
+    return torch.sqrt(torch.mean(abs2(x), dim=dim, keepdims=keepdims))
 
 
 def norm(x, dim=-1, keepdims=False):
     """Return the vector 2-norm of x along given axis."""
-    return torch.sqrt(torch.sum((x * x.conj()).real, dim=dim, keepdims=keepdims))
+    return torch.sqrt(torch.sum(abs2(x), dim=dim, keepdims=keepdims))
 
 
 def _prepare_data_for_orthogonalization(
