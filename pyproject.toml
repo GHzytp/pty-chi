@@ -26,6 +26,23 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
+cpu = [
+    "torch>=2.4",
+    "torchvision",
+]
+cuda126 = [
+    "torch>=2.4",
+    "torchvision",
+]
+cuda132 = [
+    "torch>=2.4",
+    "torchvision",
+]
+rocm72 = [
+    "torch>=2.4",
+    "torchvision",
+    "triton-rocm; sys_platform == 'linux'",
+]
 movies = ["opencv-python"]
 docs = [
     "sphinx",
@@ -36,6 +53,51 @@ nn = [
 ]
 
 [tool.setuptools_scm]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cuda126" },
+        { extra = "cuda132" },
+        { extra = "rocm72" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'", extra = "cuda126" },
+    { index = "pytorch-cu132", marker = "sys_platform == 'linux' or sys_platform == 'win32'", extra = "cuda132" },
+    { index = "pytorch-rocm72", marker = "sys_platform == 'linux'", extra = "rocm72" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux' or sys_platform == 'win32'", extra = "cuda126" },
+    { index = "pytorch-cu132", marker = "sys_platform == 'linux' or sys_platform == 'win32'", extra = "cuda132" },
+    { index = "pytorch-rocm72", marker = "sys_platform == 'linux'", extra = "rocm72" },
+]
+"triton-rocm" = { index = "pytorch-rocm72", marker = "sys_platform == 'linux'", extra = "rocm72" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm72"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
 
 [tool.mypy]
 plugins = "numpy.typing.mypy_plugin"

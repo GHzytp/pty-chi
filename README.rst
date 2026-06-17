@@ -14,16 +14,39 @@ Welcome to the repository of Pty-chi, a PyTorch-based ptychography reconstructio
 Installation
 ============
 
+We recommend using `uv <https://docs.astral.sh/uv/>`_ for environment and
+package management. uv is a modern lightweight package manager for Python
+featuring fast speed and deterministic builds. When creating a uv virtual
+environment, the environment directory and all the packages installed in it are
+kept in the current working directory.
+
 Standard installation
 ---------------------
-The easiest way to install the latest release is through PyPI. 
+If you are adding Pty-Chi to a uv-managed project, use::
 
-First, create a new conda environment with Python 3.11:
-::
+    uv add ptychi
 
-    conda create -n ptychi python=3.11
+If you are installing Pty-Chi into an existing uv virtual environment that is not
+managed as a uv project, use::
 
-Then install Pty-Chi using::
+    uv pip install ptychi
+
+Pty-Chi provides uv extras to select a PyTorch build:
+
+* ``cpu``: CPU-only PyTorch build.
+* ``cuda126``: PyTorch build with CUDA 12.6.
+* ``cuda132``: PyTorch build with CUDA 13.2.
+* ``rocm72``: PyTorch build with ROCm 7.2 on Linux.
+
+For example::
+
+    uv add "ptychi[cuda132]"
+
+or::
+
+    uv pip install "ptychi[cpu]"
+
+If you are not using uv, install the default build from PyPI with::
 
     pip install ptychi
 
@@ -33,23 +56,23 @@ Developer installation
 
 Use developer installation when you want to modify the code and test the changes,
 or when you run into build issues that drive you to install the package from source.
-We recommend using Conda/pip or uv for environment and package management.
 
-Option 1: Installation with uv
-++++++++++++++++++++++++++++++
-
-Uv is a modern lightweight package manager for Python featuring fast speed and
-deterministic builds. When creating a uv virtual environment, the environment
-directory and all the packages inatalled in it are kept in the current working
-directory -- unlike Conda, where the environments are centrally managed. Therefore,
-first ``cd`` into the **root level** of your local clone of Pty-Chi, and then create
-a new uv virtual environment with Python 3.11::
+First ``cd`` into the **root level** of your local clone of Pty-Chi, and then
+create a new uv virtual environment with Python 3.11::
 
     uv venv --python 3.11
 
 Then install Pty-Chi and its dependencies using::
 
     uv sync
+
+You can select a PyTorch build with the same extras used for standard
+installation. For example::
+
+    uv sync --extra cpu
+    uv sync --extra cuda126
+    uv sync --extra cuda132
+    uv sync --extra rocm72
 
 You can now run scripts *inside the project directory* with::
 
@@ -65,19 +88,6 @@ and then run scripts with::
     python <script.py>
 
 This allows you to run scripts located anywhere in your system.
-
-Option 2: Installation with Conda and pip
-+++++++++++++++++++++++++++++++++++++++++
-
-To install the latest code in the `main` branch, clone the repository to your workspace, and create a new conda environment
-using::
-
-    conda create -n ptychi python=3.11
-
-Then install the package and its dependencies using::
-
-    pip install -r requirements.txt
-    pip install -e .
 
 
 =======================
