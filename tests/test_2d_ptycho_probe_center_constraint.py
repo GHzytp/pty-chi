@@ -1,6 +1,6 @@
 import pytest
 import torch
-from types import SimpleNamespace
+from pydantic import ValidationError
 
 import ptychi.image_proc as ip
 from ptychi.api.options import base as obase
@@ -51,30 +51,16 @@ def test_probe_center_constraint_check_rejects_individual_mode_centering_with_in
     options = obase.ProbeOptions()
     options.initial_guess = torch.zeros((1, 1, 7, 7), dtype=torch.complex64)
     options.center_constraint.center_modes_individually = True
-    options.center_constraint.use_total_intensity_for_com = True
 
-    task_options = SimpleNamespace(
-        object_options=SimpleNamespace(
-            remove_object_probe_ambiguity=SimpleNamespace(enabled=False)
-        )
-    )
-
-    with pytest.raises(ValueError, match="use_total_intensity_for_com"):
-        options.check(task_options)
+    with pytest.raises(ValidationError, match="use_total_intensity_for_com"):
+        options.center_constraint.use_total_intensity_for_com = True
 
 
 def test_probe_center_constraint_check_promotes_deprecated_intensity_flag():
     options = obase.ProbeOptions()
     options.initial_guess = torch.zeros((1, 1, 7, 7), dtype=torch.complex64)
-    options.center_constraint.use_intensity_for_com = True
-
-    task_options = SimpleNamespace(
-        object_options=SimpleNamespace(
-            remove_object_probe_ambiguity=SimpleNamespace(enabled=False)
-        )
-    )
 
     with pytest.warns(DeprecationWarning, match="use_total_intensity_for_com"):
-        options.check(task_options)
+        options.center_constraint.use_intensity_for_com = True
 
     assert options.center_constraint.use_total_intensity_for_com is True

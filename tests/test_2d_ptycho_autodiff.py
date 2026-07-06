@@ -18,27 +18,34 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=0)
         
         options = api.AutodiffPtychographyOptions()
-        options.data_options.data = data
+        diffraction_data = data
         
-        options.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
         options.object_options.optimizer = api.Optimizers.SGD
         options.object_options.step_size = 0.1
         
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.step_size = 0.1
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
         
         options.reconstructor_options.batch_size = 96
         options.reconstructor_options.num_epochs = 32
         
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         task.run()
         
         recon = task.get_data_to_cpu('object', as_numpy=True)[0]
@@ -51,21 +58,21 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=0, pos_type="nominal")
         
         options = api.AutodiffPtychographyOptions()
-        options.data_options.data = data
+        diffraction_data = data
         
-        options.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
         options.object_options.optimizer = api.Optimizers.SGD
         options.object_options.step_size = 0.1
         
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.step_size = 0.1
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = True
         options.probe_position_options.step_size = 10
         options.probe_position_options.correction_options.update_magnitude_limit = None
@@ -75,7 +82,14 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         options.reconstructor_options.batch_size = 96
         options.reconstructor_options.num_epochs = 32
         
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         task.run()
         
         recon = task.get_data_to_cpu('object', as_numpy=True)[0]
@@ -94,9 +108,9 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=0)
         
         options = api.AutodiffPtychographyOptions()
-        options.data_options.data = data
+        diffraction_data = data
         
-        options.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
         options.object_options.optimizer = api.Optimizers.SGD
@@ -104,19 +118,26 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         options.object_options.l1_norm_constraint.enabled = True
         options.object_options.l1_norm_constraint.weight = 1e-3
         
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.step_size = 0.1
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
         
         options.reconstructor_options.batch_size = 96
         options.reconstructor_options.num_epochs = 32
         
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         task.run()
         
         recon = task.get_data_to_cpu('object', as_numpy=True)[0]
@@ -130,24 +151,24 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=3)
         
         options = api.AutodiffPtychographyOptions()
-        options.data_options.data = data
+        diffraction_data = data
         
-        options.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
         options.object_options.optimizer = api.Optimizers.SGD
         options.object_options.step_size = 0.1
         
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.step_size = 0.1
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
         
-        options.opr_mode_weight_options.initial_weights = generate_initial_opr_mode_weights(len(positions_px), probe.shape[0])
+        opr_mode_weights_data = generate_initial_opr_mode_weights(len(positions_px), probe.shape[0])
         options.opr_mode_weight_options.optimizable = True
         options.opr_mode_weight_options.optimizer = api.Optimizers.ADAM
         options.opr_mode_weight_options.step_size = 1e-3
@@ -155,7 +176,15 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         options.reconstructor_options.batch_size = 96
         options.reconstructor_options.num_epochs = 32
         
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+            opr_mode_weights_data=opr_mode_weights_data,
+        )
         task.run()
         
         recon = task.get_data_to_cpu('object', as_numpy=True)[0]
@@ -168,24 +197,24 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=3)
         
         options = api.AutodiffPtychographyOptions()
-        options.data_options.data = data
+        diffraction_data = data
         
-        options.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
         options.object_options.optimizer = api.Optimizers.LBFGS
         options.object_options.step_size = 0.1
         
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.LBFGS
         options.probe_options.step_size = 0.1
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
         
-        options.opr_mode_weight_options.initial_weights = generate_initial_opr_mode_weights(len(positions_px), probe.shape[0])
+        opr_mode_weights_data = generate_initial_opr_mode_weights(len(positions_px), probe.shape[0])
         options.opr_mode_weight_options.optimizable = True
         options.opr_mode_weight_options.optimizer = api.Optimizers.ADAM
         options.opr_mode_weight_options.step_size = 1e-3
@@ -193,7 +222,15 @@ class Test2dPtychoAutodiff(tutils.TungstenDataTester):
         options.reconstructor_options.batch_size = 96
         options.reconstructor_options.num_epochs = 2
         
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+            opr_mode_weights_data=opr_mode_weights_data,
+        )
         task.run()
     
     

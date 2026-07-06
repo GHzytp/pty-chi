@@ -1,11 +1,13 @@
 # Copyright © 2025 UChicago Argonne, LLC All right reserved
 # Full license accessible at https://github.com//AdvancedPhotonSource/pty-chi/blob/main/LICENSE
 
-from typing import Literal, Union, overload
+from typing import Literal, Optional, Union, overload
+from dataclasses import dataclass
 from types import TracebackType
 import random
 import logging
 import os
+import warnings
 
 import torch
 import numpy as np
@@ -30,6 +32,27 @@ from ptychi.device import AcceleratorModuleWrapper
 from ptychi.parallel import MultiprocessMixin
 
 logger = logging.getLogger(__name__)
+
+
+class _UnsetTaskData:
+    pass
+
+
+_UNSET = _UnsetTaskData()
+
+
+TaskArray = Union[Tensor, ndarray, list, tuple]
+
+
+@dataclass(frozen=True)
+class _PtychographyTaskData:
+    diffraction_data: TaskArray
+    object_data: TaskArray
+    probe_data: TaskArray
+    probe_position_x_px: TaskArray
+    probe_position_y_px: TaskArray
+    opr_mode_weights_data: Optional[TaskArray]
+    valid_pixel_mask: Optional[TaskArray]
 
 
 class Task(MultiprocessMixin):
@@ -60,7 +83,19 @@ class Task(MultiprocessMixin):
 
 
 class PtychographyTask(Task):
-    def __init__(self, options: api.options.task.PtychographyTaskOptions, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        options: api.options.task.PtychographyTaskOptions,
+        *args,
+        diffraction_data: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        object_data: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        probe_data: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        probe_position_x_px: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        probe_position_y_px: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        opr_mode_weights_data: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        valid_pixel_mask: Optional[TaskArray] | _UnsetTaskData = _UNSET,
+        **kwargs,
+    ) -> None:
         super().__init__(options, *args, **kwargs)
         self.options = options
         self.data_options = options.data_options
@@ -77,11 +112,279 @@ class PtychographyTask(Task):
         self.opr_mode_weights = None
         self.reconstructor: Reconstructor | None = None
 
+        self._task_data = self._resolve_task_data(
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+            opr_mode_weights_data=opr_mode_weights_data,
+            valid_pixel_mask=valid_pixel_mask,
+        )
+
         self.check_options()
+        self.check_task_data()
         self.build()
         
     def check_options(self):
         self.options.check()
+
+    def _resolve_task_data(
+        self,
+        *,
+        diffraction_data: Optional[TaskArray] | _UnsetTaskData,
+        object_data: Optional[TaskArray] | _UnsetTaskData,
+        probe_data: Optional[TaskArray] | _UnsetTaskData,
+        probe_position_x_px: Optional[TaskArray] | _UnsetTaskData,
+        probe_position_y_px: Optional[TaskArray] | _UnsetTaskData,
+        opr_mode_weights_data: Optional[TaskArray] | _UnsetTaskData,
+        valid_pixel_mask: Optional[TaskArray] | _UnsetTaskData,
+    ) -> _PtychographyTaskData:
+        return _PtychographyTaskData(
+            diffraction_data=self._resolve_data_field(
+                value=diffraction_data,
+                option_owner=self.data_options,
+                option_field_name="data",
+                option_path="options.data_options.data",
+                kwarg_name="diffraction_data",
+                required=True,
+            ),
+            object_data=self._resolve_data_field(
+                value=object_data,
+                option_owner=self.object_options,
+                option_field_name="initial_guess",
+                option_path="options.object_options.initial_guess",
+                kwarg_name="object_data",
+                required=True,
+            ),
+            probe_data=self._resolve_data_field(
+                value=probe_data,
+                option_owner=self.probe_options,
+                option_field_name="initial_guess",
+                option_path="options.probe_options.initial_guess",
+                kwarg_name="probe_data",
+                required=True,
+            ),
+            probe_position_x_px=self._resolve_data_field(
+                value=probe_position_x_px,
+                option_owner=self.position_options,
+                option_field_name="position_x_px",
+                option_path="options.probe_position_options.position_x_px",
+                kwarg_name="probe_position_x_px",
+                required=True,
+            ),
+            probe_position_y_px=self._resolve_data_field(
+                value=probe_position_y_px,
+                option_owner=self.position_options,
+                option_field_name="position_y_px",
+                option_path="options.probe_position_options.position_y_px",
+                kwarg_name="probe_position_y_px",
+                required=True,
+            ),
+            opr_mode_weights_data=self._resolve_data_field(
+                value=opr_mode_weights_data,
+                option_owner=self.opr_mode_weight_options,
+                option_field_name="initial_weights",
+                option_path="options.opr_mode_weight_options.initial_weights",
+                kwarg_name="opr_mode_weights_data",
+                required=False,
+            ),
+            valid_pixel_mask=self._resolve_data_field(
+                value=valid_pixel_mask,
+                option_owner=self.data_options,
+                option_field_name="valid_pixel_mask",
+                option_path="options.data_options.valid_pixel_mask",
+                kwarg_name="valid_pixel_mask",
+                required=False,
+            ),
+        )
+
+    def _resolve_data_field(
+        self,
+        *,
+        value,
+        option_owner,
+        option_field_name: str,
+        option_path: str,
+        kwarg_name: str,
+        required: bool,
+    ):
+        option_value = getattr(option_owner, option_field_name)
+
+        if value is not _UNSET:
+            if option_value is not None:
+                warnings.warn(
+                    f"`{option_path}` is deprecated and was ignored because "
+                    f"`{kwarg_name}` was supplied to `PtychographyTask`.",
+                    DeprecationWarning,
+                    stacklevel=4,
+                )
+            resolved_value = value
+        elif option_value is not None:
+            warnings.warn(
+                f"Passing task data via `{option_path}` is deprecated; pass "
+                f"`{kwarg_name}` to `PtychographyTask` instead.",
+                DeprecationWarning,
+                stacklevel=4,
+            )
+            resolved_value = option_value
+        else:
+            resolved_value = None
+
+        if required and resolved_value is None:
+            raise ValueError(
+                f"`{kwarg_name}` is required. Passing it through `{option_path}` is "
+                "temporarily supported but deprecated."
+            )
+        return resolved_value
+
+    def check_task_data(self):
+        data = self._task_data
+
+        diffraction_shape = self._shape(data.diffraction_data)
+        object_shape = self._shape(data.object_data)
+        probe_shape = self._shape(data.probe_data)
+        position_x_shape = self._shape(data.probe_position_x_px)
+        position_y_shape = self._shape(data.probe_position_y_px)
+
+        if len(diffraction_shape) != 3:
+            raise ValueError("`diffraction_data` must have shape (n_positions, height, width).")
+        if len(object_shape) != 3:
+            raise ValueError("`object_data` must have shape (n_slices, height, width).")
+        if len(probe_shape) != 4:
+            raise ValueError(
+                "`probe_data` must have shape "
+                "(n_opr_modes, n_incoherent_modes, height, width)."
+            )
+        if len(position_x_shape) != 1 or len(position_y_shape) != 1:
+            raise ValueError("`probe_position_x_px` and `probe_position_y_px` must be 1D arrays.")
+        if position_x_shape != position_y_shape:
+            raise ValueError(
+                "`probe_position_x_px` and `probe_position_y_px` must have matching shapes."
+            )
+
+        n_positions = position_x_shape[0]
+        if n_positions < 1:
+            raise ValueError("At least one probe position is required.")
+        if diffraction_shape[0] != n_positions:
+            raise ValueError(
+                "`diffraction_data.shape[0]` must match the number of probe positions "
+                f"({diffraction_shape[0]} != {n_positions})."
+            )
+
+        if data.valid_pixel_mask is not None:
+            valid_pixel_mask_shape = self._shape(data.valid_pixel_mask)
+            if len(valid_pixel_mask_shape) != 2:
+                raise ValueError("`valid_pixel_mask` must be a 2D boolean mask.")
+            if valid_pixel_mask_shape != diffraction_shape[-2:]:
+                raise ValueError(
+                    "`valid_pixel_mask.shape` must match the diffraction pattern shape "
+                    f"({valid_pixel_mask_shape} != {diffraction_shape[-2:]})."
+                )
+
+        self._check_opr_mode_weights_shape(
+            weights=data.opr_mode_weights_data,
+            n_positions=n_positions,
+            n_opr_modes=probe_shape[0],
+        )
+        self._check_object_position_coverage(
+            object_shape=object_shape,
+            probe_shape=probe_shape,
+            position_x_px=data.probe_position_x_px,
+            position_y_px=data.probe_position_y_px,
+        )
+
+    @staticmethod
+    def _shape(value) -> tuple[int, ...]:
+        if isinstance(value, torch.Tensor):
+            return tuple(value.shape)
+        if isinstance(value, np.ndarray):
+            return value.shape
+        return np.shape(value)
+
+    @staticmethod
+    def _as_numpy(value) -> np.ndarray:
+        if isinstance(value, torch.Tensor):
+            return value.detach().cpu().numpy()
+        return np.asarray(value)
+
+    def _check_opr_mode_weights_shape(
+        self,
+        *,
+        weights: Optional[TaskArray],
+        n_positions: int,
+        n_opr_modes: int,
+    ) -> None:
+        if weights is None:
+            if n_opr_modes > 1:
+                raise ValueError(
+                    f"You have {n_opr_modes} OPR modes in `probe_data`, but "
+                    "`opr_mode_weights_data` is not provided."
+                )
+            logging.info("Unspecified OPR weight initial guess will be automatically populated with 1s.")
+            return
+
+        weights_shape = self._shape(weights)
+        if len(weights_shape) not in (1, 2):
+            raise ValueError("`opr_mode_weights_data` must be a 1D or 2D array.")
+        if weights_shape[-1] != n_opr_modes:
+            raise ValueError(
+                f"You have {n_opr_modes} OPR modes in `probe_data`, but the number of "
+                f"modes in `opr_mode_weights_data` is {weights_shape[-1]}."
+            )
+        if len(weights_shape) == 2 and weights_shape[0] != n_positions:
+            raise ValueError(
+                "`opr_mode_weights_data.shape[0]` must match the number of probe positions "
+                f"({weights_shape[0]} != {n_positions})."
+            )
+        if self.opr_mode_weight_options.optimizable:
+            logging.warning(
+                "The default value of OPRModeWeightsOptions has been changed to False. "
+                "You have provided initial OPR weights, but optimizable is set to False. "
+                "Is this intended?"
+            )
+
+    def _check_object_position_coverage(
+        self,
+        *,
+        object_shape: tuple[int, ...],
+        probe_shape: tuple[int, ...],
+        position_x_px: TaskArray,
+        position_y_px: TaskArray,
+    ) -> None:
+        pos_y = self._as_numpy(position_y_px)
+        pos_x = self._as_numpy(position_x_px)
+        obj_lateral_shape = object_shape[-2:]
+        probe_lateral_shape = probe_shape[-2:]
+        min_size = [
+            int(np.ceil(pos_y.max() - pos_y.min() + probe_lateral_shape[-2])) + 2,
+            int(np.ceil(pos_x.max() - pos_x.min() + probe_lateral_shape[-1])) + 2,
+        ]
+        if any(min_size[i] > obj_lateral_shape[i] for i in range(2)):
+            logging.warning(
+                f"An object tensor with a lateral size of at least {min_size} is "
+                "required to avoid padding when extracting/placing patches, but the provided "
+                f"object size is {list(obj_lateral_shape)}."
+            )
+        if (
+            self.object_options.determine_position_origin_coords_by
+            == api.ObjectPosOriginCoordsMethods.SUPPORT
+        ):
+            buffer_center = np.array([np.round(x / 2) + 0.5 for x in obj_lateral_shape])
+            if (
+                pos_y.max() + buffer_center[0] + probe_lateral_shape[-2] // 2 > obj_lateral_shape[-2]
+                or pos_y.min() + buffer_center[0] - probe_lateral_shape[-2] // 2 < 0
+                or pos_x.max() + buffer_center[1] + probe_lateral_shape[-1] // 2 > obj_lateral_shape[-1]
+                or pos_x.min() + buffer_center[1] - probe_lateral_shape[-1] // 2 < 0
+            ):
+                logging.warning(
+                    "`object_options.determine_center_coords_by` is set to `SUPPORT`. This assumes "
+                    "that the probe positions are approximately zero-centered, i.e., "
+                    "`-pos_y.min() ~ pos_y.max()` and `-pos_x.min() ~ pos_x.max()`. "
+                    "However, the given probe positions will cause the reconstructor to access pixels "
+                    "out of the object support. Please provide probe positions that are approximately "
+                    "zero-centered, or set `object_options.determine_center_coords_by` to `POSITIONS`."
+                )
 
     def build(self):
         self.build_random_seed()
@@ -104,9 +407,10 @@ class PtychographyTask(Task):
 
     def build_default_device(self):
         accelerator_module = AcceleratorModuleWrapper.get_module()
+        default_device = self._get_default_device()
         
         if self.detect_launcher() is None:
-            torch.set_default_device(maps.get_device_by_enum(self.reconstructor_options.default_device))
+            torch.set_default_device(default_device)
         else:
             self.init_process_group()
             
@@ -117,7 +421,7 @@ class PtychographyTask(Task):
                 )
             
             if self.n_ranks == 1:
-                torch.set_default_device(maps.get_device_by_enum(self.reconstructor_options.default_device))
+                torch.set_default_device(default_device)
             else:
                 logging.info(f"Multi-processing mode detected with {self.n_ranks} ranks.")
                 torch.set_default_device(
@@ -136,6 +440,19 @@ class PtychographyTask(Task):
             )
         else:
             logger.info("Using device: {}".format(torch.get_default_device()))
+
+    def _get_default_device(self) -> str:
+        accelerator_module = AcceleratorModuleWrapper.get_module()
+        if (
+            self.reconstructor_options.default_device == api.Devices.GPU
+            and not accelerator_module.is_available()
+        ):
+            logger.warning(
+                "GPU default device was requested, but no accelerator is available. "
+                "Falling back to CPU."
+            )
+            return "cpu"
+        return maps.get_device_by_enum(self.reconstructor_options.default_device)
 
     def build_logger(self):
         if self.rank != 0:
@@ -168,16 +485,16 @@ class PtychographyTask(Task):
             save_on_device = False
 
         self.dataset = PtychographyDataset(
-            self.data_options.data, 
+            self._task_data.diffraction_data,
             wavelength_m=self.data_options.wavelength_m,
             free_space_propagation_distance_m=self.data_options.free_space_propagation_distance_m,
             fft_shift=self.data_options.fft_shift,
             save_data_on_device=save_on_device,
-            valid_pixel_mask=self.data_options.valid_pixel_mask,
+            valid_pixel_mask=self._task_data.valid_pixel_mask,
         )
 
     def build_object(self):
-        data = to_tensor(self.object_options.initial_guess)
+        data = to_tensor(self._task_data.object_data)
         kwargs = {
             "data": data,
             "options": self.object_options,
@@ -192,7 +509,7 @@ class PtychographyTask(Task):
             self.object = object.PlanarObject(**kwargs)
 
     def build_probe(self):
-        data = to_tensor(self.probe_options.initial_guess)
+        data = to_tensor(self._task_data.probe_data)
         kwargs = {
             "data": data,
             "options": self.probe_options,
@@ -213,20 +530,20 @@ class PtychographyTask(Task):
             self.probe = probe.Probe(**kwargs)
 
     def build_probe_positions(self):
-        pos_y = to_tensor(self.position_options.position_y_px)
-        pos_x = to_tensor(self.position_options.position_x_px)
+        pos_y = to_tensor(self._task_data.probe_position_y_px)
+        pos_x = to_tensor(self._task_data.probe_position_x_px)
         data = torch.stack([pos_y, pos_x], dim=1)
         self.probe_positions = probepos.ProbePositions(data=data, options=self.position_options)
 
     def build_opr_mode_weights(self):
-        if self.opr_mode_weight_options.initial_weights is None:
-            initial_weights = torch.ones([self.data_options.data.shape[0], 1])
+        if self._task_data.opr_mode_weights_data is None:
+            initial_weights = torch.ones([self._shape(self._task_data.diffraction_data)[0], 1])
         else:
-            initial_weights = to_tensor(self.opr_mode_weight_options.initial_weights)
+            initial_weights = to_tensor(self._task_data.opr_mode_weights_data)
         if initial_weights.ndim == 1:
             # If a 1D array is given, expand it to all scan points.
             initial_weights = initial_weights.unsqueeze(0).repeat(
-                len(self.position_options.position_x_px), 1
+                self._shape(self._task_data.probe_position_x_px)[0], 1
             )
         self.opr_mode_weights = oprweights.OPRModeWeights(
             data=initial_weights, options=self.opr_mode_weight_options

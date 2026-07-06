@@ -1,14 +1,14 @@
 # Copyright © 2025 UChicago Argonne, LLC All right reserved
 # Full license accessible at https://github.com//AdvancedPhotonSource/pty-chi/blob/main/LICENSE
 
-import dataclasses
 from dataclasses import field
+from pydantic.dataclasses import dataclass
 
 import ptychi.api.options.base as base
 from .data import PtychographyDataOptions
 
 
-@dataclasses.dataclass
+@dataclass
 class PtychographyTaskOptions(base.TaskOptions):
 
     data_options: PtychographyDataOptions = field(default_factory=PtychographyDataOptions)

@@ -59,9 +59,7 @@ options object, then populate its nested options objects.
 
     options = api.LSQMLOptions()
 
-    options.data_options.data = data
-
-    options.object_options.initial_guess = torch.ones(
+    object_guess = torch.ones(
         [1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)],
         dtype=get_default_complex_dtype(),
     )
@@ -70,13 +68,10 @@ options object, then populate its nested options objects.
     options.object_options.optimizer = api.Optimizers.SGD
     options.object_options.step_size = 1.0
 
-    options.probe_options.initial_guess = probe
     options.probe_options.optimizable = True
     options.probe_options.optimizer = api.Optimizers.SGD
     options.probe_options.step_size = 1.0
 
-    options.probe_position_options.position_x_px = positions_px[:, 1]
-    options.probe_position_options.position_y_px = positions_px[:, 0]
     options.probe_position_options.optimizable = False
 
     options.reconstructor_options.batch_size = 64
@@ -88,8 +83,20 @@ After the options object is configured, pass it to ``PtychographyTask``:
 
     from ptychi.api.task import PtychographyTask
 
-    task = PtychographyTask(options)
+    task = PtychographyTask(
+        options,
+        diffraction_data=data,
+        object_data=object_guess,
+        probe_data=probe,
+        probe_position_x_px=positions_px[:, 1],
+        probe_position_y_px=positions_px[:, 0],
+    )
     task.run()
+
+Large reconstruction arrays are task data, not settings. During the transition,
+the old option fields such as ``options.data_options.data`` and
+``options.probe_options.initial_guess`` still work, but they emit
+``DeprecationWarning`` when ``PtychographyTask`` resolves them.
 
 
 ParameterOptions

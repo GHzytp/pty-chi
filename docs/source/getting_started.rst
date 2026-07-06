@@ -103,10 +103,8 @@ algorithm. A few key points:
 
     # Create options
     options = api.LSQMLOptions()
-    
-    options.data_options.data = your_diffraction_data
-    
-    options.object_options.initial_guess = torch.ones(
+
+    object_guess = torch.ones(
         [1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)],
         dtype=get_default_complex_dtype()
     )
@@ -114,17 +112,14 @@ algorithm. A few key points:
     options.object_options.optimizable = True
     options.object_options.optimizer = api.Optimizers.SGD
     options.object_options.step_size = 1
-    
-    options.probe_options.initial_guess = probe
+
     options.probe_options.optimizable = True
     options.probe_options.optimizer = api.Optimizers.SGD
     options.probe_options.step_size = 1
 
-    options.probe_position_options.position_x_px = positions_px[:, 1]
-    options.probe_position_options.position_y_px = positions_px[:, 0]
     options.probe_position_options.optimizable = False
-    
-    options.opr_mode_weight_options.initial_weights = generate_initial_opr_mode_weights(len(positions_px), probe.shape[0])
+
+    opr_mode_weights = generate_initial_opr_mode_weights(len(positions_px), probe.shape[0])
     options.opr_mode_weight_options.optimizable = True
     options.opr_mode_weight_options.update_relaxation = 0.1
     
@@ -133,7 +128,15 @@ algorithm. A few key points:
     options.reconstructor_options.num_epochs = 8
     
     # Run reconstruction
-    task = PtychographyTask(options)
+    task = PtychographyTask(
+        options,
+        diffraction_data=data,
+        object_data=object_guess,
+        probe_data=probe,
+        probe_position_x_px=positions_px[:, 1],
+        probe_position_y_px=positions_px[:, 0],
+        opr_mode_weights_data=opr_mode_weights,
+    )
     task.run()
     
     # To get and save results after every ``save_interval`` epochs, you can also do:

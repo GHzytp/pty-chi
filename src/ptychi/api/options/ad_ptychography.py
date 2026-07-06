@@ -4,6 +4,8 @@
 from typing import Optional, Type, Union
 import dataclasses
 from dataclasses import field
+from pydantic import Field as PydanticField
+from pydantic.dataclasses import dataclass
 
 
 import ptychi.api.options.base as base
@@ -13,7 +15,7 @@ import ptychi.api.options.ad_general as ad_general
 import ptychi.forward_models as fm
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyReconstructorOptions(ad_general.AutodiffReconstructorOptions):
     forward_model_class: Union["enums.ForwardModels", Type["fm.ForwardModel"]] = enums.ForwardModels.PLANAR_PTYCHOGRAPHY
     
@@ -21,7 +23,7 @@ class AutodiffPtychographyReconstructorOptions(ad_general.AutodiffReconstructorO
         return enums.Reconstructors.AD_PTYCHO
 
 
-@dataclasses.dataclass
+@dataclass
 class DeepImagePriorOptions(base.Options):
     enabled: bool = False
     """Whether to use deep image prior."""
@@ -32,7 +34,7 @@ class DeepImagePriorOptions(base.Options):
     model_params: dict = dataclasses.field(default_factory=dict)
     """The parameters for the model's constructor."""
     
-    net_input_channels: int = 32
+    net_input_channels: int = PydanticField(default=32, ge=1)
     """The number of channels in the input to the network."""
     
     constrain_object_outside_network: bool = False
@@ -51,37 +53,37 @@ class DeepImagePriorOptions(base.Options):
     """
     
     
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyObjectExperimentalOptions(base.Options):
     deep_image_prior_options: Optional[DeepImagePriorOptions] = dataclasses.field(default_factory=DeepImagePriorOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyObjectOptions(base.ObjectOptions):
     experimental: AutodiffPtychographyObjectExperimentalOptions = dataclasses.field(default_factory=AutodiffPtychographyObjectExperimentalOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyProbeExperimentalOptions(base.Options):
     deep_image_prior_options: Optional[DeepImagePriorOptions] = dataclasses.field(default_factory=DeepImagePriorOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyProbeOptions(base.ProbeOptions):
     experimental: AutodiffPtychographyProbeExperimentalOptions = dataclasses.field(default_factory=AutodiffPtychographyProbeExperimentalOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyProbePositionOptions(base.ProbePositionOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyOPRModeWeightsOptions(base.OPRModeWeightsOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffPtychographyOptions(task_options.PtychographyTaskOptions):
     reconstructor_options: AutodiffPtychographyReconstructorOptions = field(
         default_factory=AutodiffPtychographyReconstructorOptions

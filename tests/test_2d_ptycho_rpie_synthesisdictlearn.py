@@ -27,9 +27,9 @@ class Test2DPtychoRPIE_SDL(tutils.TungstenDataTester):
         npz_dict_file.close()
 
         options = api.RPIEOptions()
-        options.data_options.data = data
+        diffraction_data = data
 
-        options.object_options.initial_guess = torch.ones(
+        object_data = torch.ones(
             [1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)],
             dtype=get_default_complex_dtype(),
         )
@@ -39,7 +39,7 @@ class Test2DPtychoRPIE_SDL(tutils.TungstenDataTester):
         options.object_options.step_size = 1e-1
         options.object_options.alpha = 1e-0
 
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.orthogonalize_incoherent_modes.enabled = True
@@ -47,28 +47,30 @@ class Test2DPtychoRPIE_SDL(tutils.TungstenDataTester):
         options.probe_options.alpha = 1e-0
 
         options.probe_options.experimental.sdl_probe_options.enabled = True
-        options.probe_options.experimental.sdl_probe_options.d_mat = np.asarray(
-            D, dtype=np.complex64
-        )
-        options.probe_options.experimental.sdl_probe_options.d_mat_conj_transpose = np.conj(
-            options.probe_options.experimental.sdl_probe_options.d_mat
-        ).T
-        options.probe_options.experimental.sdl_probe_options.d_mat_pinv = np.linalg.pinv(
-            options.probe_options.experimental.sdl_probe_options.d_mat
-        )
+        d_mat = np.asarray(D, dtype=np.complex64)
+        options.probe_options.experimental.sdl_probe_options.d_mat = d_mat
+        options.probe_options.experimental.sdl_probe_options.d_mat_conj_transpose = np.conj(d_mat).T
+        options.probe_options.experimental.sdl_probe_options.d_mat_pinv = np.linalg.pinv(d_mat)
         options.probe_options.experimental.sdl_probe_options.probe_sparse_code_nnz = np.round(
             0.90 * D.shape[-1]
         )
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
 
         options.reconstructor_options.batch_size = round(data.shape[0] * 0.1)
         options.reconstructor_options.num_epochs = 32
         options.reconstructor_options.allow_nondeterministic_algorithms = False
 
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         task.run()
 
         recon = task.get_data_to_cpu("object", as_numpy=True)[0]

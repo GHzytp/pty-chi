@@ -35,7 +35,8 @@ parameters.
    * - Probe positions
      - ``(n_positions, 2)``
      - (1) Probe positions should follow row-major order, i.e., y-coordinates come first. 
-       (2) The aforementioned shape is of the internally stored position tensor. The ``ProbePositionOptions`` object takes x- and y-positions as separate arguments.
+       (2) The aforementioned shape is of the internally stored position tensor.
+       ``PtychographyTask`` takes x- and y-positions as separate data arguments.
    * - Diffraction data
      - ``(n_positions, height, width)``
      -

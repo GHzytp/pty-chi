@@ -1,15 +1,16 @@
 # Copyright © 2025 UChicago Argonne, LLC All right reserved
 # Full license accessible at https://github.com//AdvancedPhotonSource/pty-chi/blob/main/LICENSE
 
-import dataclasses
 from dataclasses import field
+from pydantic import Field as PydanticField
+from pydantic.dataclasses import dataclass
 
 import ptychi.api.options.base as base
 import ptychi.api.options.task as task_options
 import ptychi.api.enums as enums
 
 
-@dataclasses.dataclass
+@dataclass
 class BHReconstructorOptions(base.ReconstructorOptions):
     method: str = "GD"
     """
@@ -22,14 +23,14 @@ class BHReconstructorOptions(base.ReconstructorOptions):
         return enums.Reconstructors.BH
 
 
-@dataclasses.dataclass
+@dataclass
 class BHObjectOptions(base.ObjectOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class BHProbeOptions(base.ProbeOptions):
-    rho: float = 1
+    rho: float = PydanticField(default=1, gt=0)
     """   
     Scaling factor for the probe variable relative to the object variable.
     It addresses numerical instabilities caused by disparities in gradient magnitudes between variables, 
@@ -39,9 +40,9 @@ class BHProbeOptions(base.ProbeOptions):
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class BHProbePositionOptions(base.ProbePositionOptions):
-    rho: float = 0.1
+    rho: float = PydanticField(default=0.1, gt=0)
     """   
     Scaling factor for the probe positions relative to the object variable.
     It addresses numerical instabilities caused by disparities in gradient magnitudes between variables, 
@@ -51,12 +52,12 @@ class BHProbePositionOptions(base.ProbePositionOptions):
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class BHOPRModeWeightsOptions(base.OPRModeWeightsOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class BHOptions(task_options.PtychographyTaskOptions):
     reconstructor_options: BHReconstructorOptions = field(default_factory=BHReconstructorOptions)
 

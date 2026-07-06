@@ -3,37 +3,39 @@
 
 import dataclasses
 from dataclasses import field
+from pydantic import Field as PydanticField
+from pydantic.dataclasses import dataclass
 
 import ptychi.api.options.base as base
 import ptychi.api.options.task as task_options
 import ptychi.api.enums as enums
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEReconstructorOptions(base.ReconstructorOptions):
     
     def get_reconstructor_type(self) -> enums.Reconstructors:
         return enums.Reconstructors.PIE
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEObjectOptions(base.ObjectOptions):
     
-    alpha: float = 0.1
+    alpha: float = PydanticField(default=0.1, ge=0)
     """
     Multiplier for the update to the object, as defined in table 1 of Maiden (2017).
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEProbeExperimentalOptions(base.Options):
     sdl_probe_options: base.SynthesisDictLearnProbeOptions = dataclasses.field(default_factory=base.SynthesisDictLearnProbeOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEProbeOptions(base.ProbeOptions):
     
-    alpha: float = 0.1
+    alpha: float = PydanticField(default=0.1, ge=0)
     """
     Multiplier for the update to the probe, as defined in table 1 of Maiden (2017).
     """
@@ -41,17 +43,17 @@ class PIEProbeOptions(base.ProbeOptions):
     experimental: PIEProbeExperimentalOptions = dataclasses.field(default_factory=PIEProbeExperimentalOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEProbePositionOptions(base.ProbePositionOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEOPRModeWeightsOptions(base.OPRModeWeightsOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class PIEOptions(task_options.PtychographyTaskOptions):
     
     reconstructor_options: PIEReconstructorOptions = field(default_factory=PIEReconstructorOptions)
@@ -65,27 +67,27 @@ class PIEOptions(task_options.PtychographyTaskOptions):
     opr_mode_weight_options: PIEOPRModeWeightsOptions = field(default_factory=PIEOPRModeWeightsOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class EPIEReconstructorOptions(PIEReconstructorOptions):
     
     def get_reconstructor_type(self) -> enums.Reconstructors:
         return enums.Reconstructors.EPIE
 
 
-@dataclasses.dataclass
+@dataclass
 class EPIEOptions(PIEOptions):
 
     reconstructor_options: EPIEReconstructorOptions = field(default_factory=EPIEReconstructorOptions)
 
 
-@dataclasses.dataclass
+@dataclass
 class RPIEReconstructorOptions(PIEReconstructorOptions):
     
     def get_reconstructor_type(self) -> enums.Reconstructors:
         return enums.Reconstructors.RPIE
 
 
-@dataclasses.dataclass
+@dataclass
 class RPIEOptions(PIEOptions):
 
     reconstructor_options: RPIEReconstructorOptions = field(default_factory=RPIEReconstructorOptions)

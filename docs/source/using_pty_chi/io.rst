@@ -29,11 +29,16 @@ it to a JSON file.
     import json
 
     options = api.LSQMLOptions()
-
-    options.data_options.data = data
     # ...
 
-    task = api.PtychographyTask(options)
+    task = api.PtychographyTask(
+        options,
+        diffraction_data=data,
+        object_data=object_guess,
+        probe_data=probe_guess,
+        probe_position_x_px=position_x_px,
+        probe_position_y_px=position_y_px,
+    )
 
     # Option 1: get settings dictionary from the Options object
     options_dict = options.get_dict()
@@ -62,8 +67,8 @@ The following large arrays are not included in the dictionaries exported,
 and will be disregarded when loading the settings if they are present.
 
 - ``DataOptions.data``
+- ``DataOptions.valid_pixel_mask``
 - ``ObjectOptions.initial_guess``
-- ``ObjectOptions.valid_pixel_mask``
 - ``ProbeOptions.initial_guess``
 - ``ProbePositionOptions.position_x/y_px``
 - ``OPRModeWeightsOptions.initial_weights``

@@ -30,10 +30,10 @@ class TestMultislicePtychoRPIESDL(tutils.TungstenDataTester):
         npz_dict_file.close()
 
         options = api.RPIEOptions()
-        options.data_options.data = data
+        diffraction_data = data
 
         Nslices = 2
-        options.object_options.initial_guess = torch.ones(
+        object_data = torch.ones(
             [Nslices, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)],
             dtype=get_default_complex_dtype(),
         )
@@ -50,7 +50,7 @@ class TestMultislicePtychoRPIESDL(tutils.TungstenDataTester):
         options.object_options.multislice_regularization.unwrap_image_grad_method = api.enums.ImageGradientMethods.FOURIER_DIFFERENTIATION
         options.object_options.multislice_regularization.unwrap_image_integration_method = api.enums.ImageIntegrationMethods.FOURIER
    
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.orthogonalize_incoherent_modes.enabled = True
@@ -58,23 +58,20 @@ class TestMultislicePtychoRPIESDL(tutils.TungstenDataTester):
         options.probe_options.alpha = 9e-1
 
         options.probe_options.experimental.sdl_probe_options.enabled = True
-        options.probe_options.experimental.sdl_probe_options.d_mat = np.asarray(
-            D, dtype=np.complex64
-        )
-        options.probe_options.experimental.sdl_probe_options.d_mat_conj_transpose = np.conj(
-            options.probe_options.experimental.sdl_probe_options.d_mat
-        ).T
+        d_mat = np.asarray(D, dtype=np.complex64)
+        options.probe_options.experimental.sdl_probe_options.d_mat = d_mat
+        options.probe_options.experimental.sdl_probe_options.d_mat_conj_transpose = np.conj(d_mat).T
         options.probe_options.experimental.sdl_probe_options.d_mat_pinv = D_pinv
         options.probe_options.experimental.sdl_probe_options.probe_sparse_code_nnz = np.round(
             0.50 * D.shape[-1]
         )
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
 
         options.opr_mode_weight_options.optimizable = True
-        options.opr_mode_weight_options.initial_weights = generate_initial_opr_mode_weights( len(positions_px), probe.shape[0] )
+        opr_mode_weights_data = generate_initial_opr_mode_weights( len(positions_px), probe.shape[0] )
         options.opr_mode_weight_options.optimization_plan.stride = 1
         options.opr_mode_weight_options.update_relaxation = 1e-2
 
@@ -82,7 +79,15 @@ class TestMultislicePtychoRPIESDL(tutils.TungstenDataTester):
         options.reconstructor_options.num_epochs = 8
         options.reconstructor_options.allow_nondeterministic_algorithms = False
 
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+            opr_mode_weights_data=opr_mode_weights_data,
+        )
         task.run()
 
         recon = task.get_data_to_cpu("object", as_numpy=True)

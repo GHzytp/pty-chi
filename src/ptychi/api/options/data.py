@@ -1,11 +1,10 @@
 # Copyright © 2025 UChicago Argonne, LLC All right reserved
 # Full license accessible at https://github.com//AdvancedPhotonSource/pty-chi/blob/main/LICENSE
 
-from typing import Union, Optional
-import dataclasses
+from typing import Optional
+from pydantic.dataclasses import dataclass
 
-from numpy import ndarray, inf
-from torch import Tensor
+from numpy import inf
 
 import ptychi.api.options.base as base
 
@@ -13,10 +12,10 @@ import ptychi.api.options.base as base
 __all__ = ["PtychographyDataOptions"]
 
 
-@dataclasses.dataclass
+@dataclass
 class PtychographyDataOptions(base.Options):
 
-    data: Union[ndarray, Tensor] = None
+    data: Optional[base.DataArray] = None
     """
     The intensity data. Use collected data as they are; data should NOT be FFT-shifted 
     or square-rooted.
@@ -34,7 +33,7 @@ class PtychographyDataOptions(base.Options):
     detector_pixel_size_m: float = 1e-8
     """The detector pixel size in meters."""
 
-    valid_pixel_mask: Optional[Union[ndarray, Tensor]] = None
+    valid_pixel_mask: Optional[base.DataArray] = None
     """A 2D boolean mask where valid pixels are True."""
     
     save_data_on_device: bool = False

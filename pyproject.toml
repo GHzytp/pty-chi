@@ -13,6 +13,7 @@ dependencies = [
     "mypy",
     "numpy>=2.1",
     "pandas",
+    "pydantic>=2,<3",
     "pytest>=8.4.1",
     "ruff",
     "scikit-image",

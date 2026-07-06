@@ -2,9 +2,10 @@
 # Full license accessible at https://github.com//AdvancedPhotonSource/pty-chi/blob/main/LICENSE
 
 from typing import Optional
-import dataclasses
 from dataclasses import field
 import logging
+from pydantic import Field as PydanticField
+from pydantic.dataclasses import dataclass
 
 import ptychi.api.options.base as base
 import ptychi.api.options.task as task_options
@@ -13,7 +14,7 @@ import ptychi.api.enums as enums
 logger = logging.getLogger(__name__)
 
 
-@dataclasses.dataclass
+@dataclass
 class LSQMLReconstructorOptions(base.ReconstructorOptions):
     
     noise_model: enums.NoiseModels = enums.NoiseModels.GAUSSIAN
@@ -21,7 +22,7 @@ class LSQMLReconstructorOptions(base.ReconstructorOptions):
     The noise model to use.
     """
     
-    gaussian_noise_std: float = 0.5
+    gaussian_noise_std: float = PydanticField(default=0.5, gt=0)
     """
     The standard deviation of the gaussian noise. Only used when `noise_model == enums.NoiseModels.GAUSSIAN`.
     """
@@ -45,10 +46,12 @@ class LSQMLReconstructorOptions(base.ReconstructorOptions):
     This is how it is done in PtychoShelves.
     """
     
-    momentum_acceleration_gain: float = 0.0
+    momentum_acceleration_gain: float = PydanticField(default=0.0, ge=0)
     """The gain of momentum acceleration for object and probe. If 0, momentum acceleration is not used."""
     
-    momentum_acceleration_gradient_mixing_factor: Optional[float] = 1
+    momentum_acceleration_gradient_mixing_factor: Optional[float] = PydanticField(
+        default=1, ge=0
+    )
     """
     Controls how the current gradient is mixed with the accumulated velocity in LSQML
     momentum acceleration:
@@ -70,7 +73,7 @@ class LSQMLReconstructorOptions(base.ReconstructorOptions):
     You may also want to check `ObjectOptions.remove_object_probe_ambiguity`.
     """
     
-    preconditioning_damping_factor: float = 0.1
+    preconditioning_damping_factor: float = PydanticField(default=0.1, ge=0)
     """
     The damping factor for applying preconditioning to the object update, which is calculated as::
     
@@ -96,10 +99,10 @@ class LSQMLReconstructorOptions(base.ReconstructorOptions):
         return enums.Reconstructors.LSQML
     
 
-@dataclasses.dataclass
+@dataclass
 class LSQMLObjectOptions(base.ObjectOptions):
     
-    optimal_step_size_scaler: float = 0.9
+    optimal_step_size_scaler: float = PydanticField(default=0.9, gt=0)
     """
     A scaler for the solved optimal step size (beta_LSQ in PtychoShelves).
     """
@@ -112,23 +115,25 @@ class LSQMLObjectOptions(base.ObjectOptions):
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class LSQMLProbeOptions(base.ProbeOptions):
-    optimal_step_size_scaler: float = 0.9
+    optimal_step_size_scaler: float = PydanticField(default=0.9, gt=0)
     """
     A scaler for the solved optimal step size (beta_LSQ in PtychoShelves).
     """
     
     
-@dataclasses.dataclass
+@dataclass
 class LSQMLProbePositionOptions(base.ProbePositionOptions):
-    momentum_acceleration_gain: float = 0.0
+    momentum_acceleration_gain: float = PydanticField(default=0.0, ge=0)
     """
     The gain of momentum acceleration for probe positions. If 0, momentum
     acceleration is not used.
     """
 
-    momentum_acceleration_gradient_mixing_factor: Optional[float] = 1
+    momentum_acceleration_gradient_mixing_factor: Optional[float] = PydanticField(
+        default=1, ge=0
+    )
     """
     Controls how the current position update is mixed with the accumulated
     velocity in probe-position momentum acceleration:
@@ -139,7 +144,7 @@ class LSQMLProbePositionOptions(base.ProbePositionOptions):
     Set this parameter to 1 to reproduce the behavior in foldslice.
     """
 
-    momentum_acceleration_memory: int = 3
+    momentum_acceleration_memory: int = PydanticField(default=3, ge=1)
     """
     Number of previous epochs used to estimate the friction of probe-position
     momentum acceleration.
@@ -154,12 +159,12 @@ class LSQMLProbePositionOptions(base.ProbePositionOptions):
             )
 
 
-@dataclasses.dataclass
+@dataclass
 class LSQMLOPRModeWeightsOptions(base.OPRModeWeightsOptions):
     pass
 
 
-@dataclasses.dataclass
+@dataclass
 class LSQMLOptions(task_options.PtychographyTaskOptions):
 
     reconstructor_options: LSQMLReconstructorOptions = field(default_factory=LSQMLReconstructorOptions)

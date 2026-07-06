@@ -18,30 +18,37 @@ class Test2DPtychoDM(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=0)
 
         options = api.DMOptions()
-        options.data_options.data = data
+        diffraction_data = data
 
-        options.object_options.initial_guess = torch.ones(
+        object_data = torch.ones(
             [1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)],
             dtype=get_default_complex_dtype(),
         )
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
 
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.power_constraint.probe_power = np.sum(
             np.max(data, axis=-3), axis=(-2, -1)
         )
         options.probe_options.power_constraint.enabled = True
         options.probe_options.optimizable = True
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = False
 
         options.reconstructor_options.num_epochs = 8
         options.reconstructor_options.chunk_length = 100
         options.reconstructor_options.allow_nondeterministic_algorithms = False
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         task.run()
 
         recon = task.get_data_to_cpu("object", as_numpy=True)[0]
@@ -56,30 +63,37 @@ class Test2DPtychoDMPositionCorrection(tutils.TungstenDataTester):
         data, probe, pixel_size_m, positions_px = self.load_tungsten_data(additional_opr_modes=0)
 
         options = api.DMOptions()
-        options.data_options.data = data
+        diffraction_data = data
 
-        options.object_options.initial_guess = torch.ones(
+        object_data = torch.ones(
             [1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)],
             dtype=get_default_complex_dtype(),
         )
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
 
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.power_constraint.probe_power = np.sum(
             np.max(data, axis=-3), axis=(-2, -1)
         )
         options.probe_options.power_constraint.enabled = True
         options.probe_options.optimizable = True
 
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.optimizable = True
 
         options.reconstructor_options.num_epochs = 8
         options.reconstructor_options.chunk_length = 100
         options.reconstructor_options.allow_nondeterministic_algorithms = False
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         task.run()
 
         recon = task.get_data_to_cpu("object", as_numpy=True)[0]

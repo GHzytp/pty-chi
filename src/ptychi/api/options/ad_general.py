@@ -2,8 +2,8 @@
 # Full license accessible at https://github.com//AdvancedPhotonSource/pty-chi/blob/main/LICENSE
 
 from typing import Optional, Type, Union
-import dataclasses
 from dataclasses import field
+from pydantic.dataclasses import dataclass
 
 
 import ptychi.api.options.base as base
@@ -12,7 +12,7 @@ import ptychi.api.enums as enums
 import ptychi.forward_models as fm
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffReconstructorOptions(base.ReconstructorOptions):
     loss_function: enums.LossFunctions = enums.LossFunctions.MSE_SQRT
     """
@@ -33,7 +33,7 @@ class AutodiffReconstructorOptions(base.ReconstructorOptions):
         return enums.Reconstructors.AD_GENERAL
 
 
-@dataclasses.dataclass
+@dataclass
 class AutodiffOptions(task_options.PtychographyTaskOptions):
     reconstructor_options: AutodiffReconstructorOptions = field(
         default_factory=AutodiffReconstructorOptions

@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 import torch
+import pytest
+from pydantic import ValidationError
 
 import ptychi.api as api
 from ptychi.reconstructors.lsqml import LSQMLReconstructor, MomentumState
@@ -8,10 +10,6 @@ from ptychi.reconstructors.lsqml import LSQMLReconstructor, MomentumState
 
 def make_valid_options():
     options = api.LSQMLOptions()
-    options.object_options.initial_guess = torch.ones((1, 8, 8), dtype=torch.complex64)
-    options.probe_options.initial_guess = torch.ones((1, 1, 4, 4), dtype=torch.complex64)
-    options.probe_position_options.position_y_px = torch.tensor([-1.0, 1.0])
-    options.probe_position_options.position_x_px = torch.tensor([-1.0, 1.0])
     return options
 
 
@@ -28,14 +26,9 @@ def test_lsqml_probe_position_momentum_disabled_by_default():
 def test_lsqml_probe_position_momentum_requires_positive_memory():
     options = make_valid_options()
     options.probe_position_options.momentum_acceleration_gain = 0.5
-    options.probe_position_options.momentum_acceleration_memory = 0
 
-    try:
-        options.check()
-    except ValueError as exc:
-        assert "momentum_acceleration_memory" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for non-positive momentum memory.")
+    with pytest.raises(ValidationError, match="momentum_acceleration_memory"):
+        options.probe_position_options.momentum_acceleration_memory = 0
 
 
 class DummyProbePositions:

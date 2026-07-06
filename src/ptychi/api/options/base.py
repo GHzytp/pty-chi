@@ -5,14 +5,13 @@ from typing import Optional, Union, TYPE_CHECKING, Sequence, get_origin, get_arg
 import dataclasses
 from dataclasses import field, fields
 import logging
-from math import ceil
 import enum
 import warnings
 
-from numpy import ndarray
-from torch import Tensor
-import torch
 import numpy as np
+import torch
+from pydantic import ConfigDict, Field as PydanticField, field_validator, model_validator
+from pydantic.dataclasses import dataclass
 
 import ptychi.api.enums as enums
 import ptychi.utils as utils
@@ -24,17 +23,37 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+SerializableArray = list | tuple
+DataArray = torch.Tensor | np.ndarray | list | tuple
 
-@dataclasses.dataclass
+OPTIONS_CONFIG = ConfigDict(
+    validate_assignment=True,
+    extra="forbid",
+    arbitrary_types_allowed=True,
+)
+
+
+def _get_validation_values(data):
+    """Return mutable field values from Pydantic dataclass validator input."""
+    if isinstance(data, dict):
+        return data
+    return getattr(data, "kwargs", None)
+
+
+def _as_serializable_array(value):
+    """Convert array-like option values to JSON-native containers."""
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    return value
+
+
+@dataclass(config=OPTIONS_CONFIG)
 class Options:
-    
-    def __setattr__(self, name, value):
-        # Check if the attribute already exists in the class fields.
-        if name not in {f.name for f in dataclasses.fields(self)}:
-            raise AttributeError(f"{name} is not a valid field in {self.__class__.__name__}.")
-        # If it exists, allow setting the value.
-        super().__setattr__(name, value)
-        
+
     def check(self, *args, **kwargs) -> None:
         """Check if options values are valid.
         """
@@ -84,25 +103,25 @@ class Options:
         raise ValueError(f"Field {name} not found in {self.__class__.__name__}.")
 
 
-@dataclasses.dataclass
+@dataclass
 class OptimizationPlan(Options):
     """
     When a `ReconstructParameter` has `optimizable == True`, this class is used to specify
     the start, stop, and stride epochs of the optimization for that parameter. This class is
     also used by `FeatureOptions`.
     """
-    start: int = 0
+    start: int = PydanticField(default=0, ge=0)
     """
     The starting epoch.
     """
 
-    stop: Optional[int] = None
+    stop: Optional[int] = PydanticField(default=None, ge=0)
     """
     The starting epoch. If None, optimization will run to the last epoch if the parameter
     is optimizable.
     """
 
-    stride: int = 1
+    stride: int = PydanticField(default=1, ge=1)
     """
     The stride in epochs. Optimization will run every `stride` epochs.
     """
@@ -136,7 +155,7 @@ class OptimizationPlan(Options):
         return True
 
 
-@dataclasses.dataclass
+@dataclass
 class ParameterOptions(Options):
     optimizable: bool = True
     """
@@ -169,7 +188,7 @@ class ParameterOptions(Options):
         return super().check(options)
 
 
-@dataclasses.dataclass
+@dataclass
 class FeatureOptions(Options):
     """
     Abstract base class that is inherited by sub-feature dataclasses. This class is used to
@@ -189,7 +208,7 @@ class FeatureOptions(Options):
             return False
 
 
-@dataclasses.dataclass
+@dataclass
 class ObjectMultisliceRegularizationOptions(FeatureOptions):
     """Settings for multislice regularization of the object."""
 
@@ -228,7 +247,7 @@ class ObjectMultisliceRegularizationOptions(FeatureOptions):
         - DISCRETE: Use cumulative sum.
     """
 
-@dataclasses.dataclass
+@dataclass
 class ObjectHardLimitsMagnitudePhase(FeatureOptions):
     """Settings for the hard constraint on sample mangitude and phase limits."""
 
@@ -236,14 +255,19 @@ class ObjectHardLimitsMagnitudePhase(FeatureOptions):
 
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=OptimizationPlan)
 
-    abs_lim: Optional[ndarray] = None
+    abs_lim: Optional[SerializableArray] = None
     """Hard constraint for object magnitude: abs_lim[0] <= abs(object) <= abs_lim[1]."""
     
-    phase_lim: Optional[ndarray] = None
+    phase_lim: Optional[SerializableArray] = None
     """Hard constraint for object phase: phase_lim[0] <= angle(object) <= phase_lim[1]."""
 
+    @field_validator("abs_lim", "phase_lim", mode="before")
+    @classmethod
+    def _convert_limits_to_serializable_arrays(cls, value):
+        return _as_serializable_array(value)
 
-@dataclasses.dataclass
+
+@dataclass
 class ObjectL1NormConstraintOptions(FeatureOptions):
     """Settings for the L1 norm constraint."""
 
@@ -255,7 +279,7 @@ class ObjectL1NormConstraintOptions(FeatureOptions):
     """The weight of the L1 norm constraint. Disabled if equal or less than 0."""
     
 
-@dataclasses.dataclass
+@dataclass
 class ObjectL2NormConstraintOptions(FeatureOptions):
     """Settings for the L2 norm constraint."""
 
@@ -267,7 +291,7 @@ class ObjectL2NormConstraintOptions(FeatureOptions):
     """The weight of the L2 norm constraint. Disabled if equal or less than 0."""
 
 
-@dataclasses.dataclass
+@dataclass
 class ObjectSmoothnessConstraintOptions(FeatureOptions):
     """Settings for smoothing of the magnitude (but not the phase) of the object"""
 
@@ -275,7 +299,7 @@ class ObjectSmoothnessConstraintOptions(FeatureOptions):
 
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=OptimizationPlan)
 
-    alpha: float = 0
+    alpha: float = PydanticField(default=0, ge=0, le=1.0 / 8)
     """
     The relaxation smoothing constant. This value should be in the range  0 < alpha <= 1/8.
 
@@ -292,7 +316,7 @@ class ObjectSmoothnessConstraintOptions(FeatureOptions):
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class ObjectTotalVariationOptions(FeatureOptions):
     """Settings for total variation constraint on the object."""
 
@@ -304,7 +328,7 @@ class ObjectTotalVariationOptions(FeatureOptions):
     """The weight of the total variation constraint. Disabled if equal or less than 0."""
 
 
-@dataclasses.dataclass
+@dataclass
 class RemoveGridArtifactsOptions(FeatureOptions):
     """Settings for grid artifact removal in the object's phase, applied at the end of an epoch"""
 
@@ -312,13 +336,13 @@ class RemoveGridArtifactsOptions(FeatureOptions):
 
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=OptimizationPlan)
 
-    period_x_m: float = 1e-7
+    period_x_m: float = PydanticField(default=1e-7, gt=0)
     """The horizontal period of grid artifacts in meters."""
 
-    period_y_m: float = 1e-7
+    period_y_m: float = PydanticField(default=1e-7, gt=0)
     """The vertical period of grid artifacts in meters."""
 
-    window_size: int = 5
+    window_size: int = PydanticField(default=5, ge=1)
     """The window size for grid artifact removal in pixels."""
 
     direction: enums.Directions = enums.Directions.XY
@@ -328,7 +352,7 @@ class RemoveGridArtifactsOptions(FeatureOptions):
     """The component of the object to remove grid artifacts from."""
     
 
-@dataclasses.dataclass
+@dataclass
 class RemoveObjectProbeAmbiguityOptions(FeatureOptions):
     """Settings for removing the object-probe ambiguity, where the object is scaled by its norm
     so that the mean transmission is kept around 1, and the probe is scaled accordingly.
@@ -339,7 +363,7 @@ class RemoveObjectProbeAmbiguityOptions(FeatureOptions):
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=lambda: OptimizationPlan(stride=10))
     
     
-@dataclasses.dataclass
+@dataclass
 class SliceSpacingOptions(ParameterOptions):
     
     optimizable: bool = False
@@ -371,12 +395,12 @@ class SliceSpacingOptions(ParameterOptions):
     
     
 
-@dataclasses.dataclass
+@dataclass
 class ObjectOptions(ParameterOptions):
-    initial_guess: Union[ndarray, Tensor] = None
+    initial_guess: Optional[DataArray] = None
     """A (h, w) complex tensor of the object initial guess."""
 
-    slice_spacings_m: Optional[ndarray] = None
+    slice_spacings_m: Optional[SerializableArray] = None
     """Slice spacings in meters. This should be provided if the object is multislice.
     
     If the slice spacings need to be optimized, set `slice_spacing_options.optimizable` to `True`.
@@ -385,11 +409,11 @@ class ObjectOptions(ParameterOptions):
     
     slice_spacing_options: SliceSpacingOptions = field(default_factory=SliceSpacingOptions)
 
-    pixel_size_m: float = 1.0
+    pixel_size_m: float = PydanticField(default=1.0, gt=0)
     """The pixel size in meters. When pixel size is non-square, this should be the width (x)
     of the pixel size."""
     
-    pixel_size_aspect_ratio: float = 1.0
+    pixel_size_aspect_ratio: float = PydanticField(default=1.0, gt=0)
     """The aspect ratio of the pixel size, defined as width (x) / height (y).
     """
 
@@ -474,7 +498,7 @@ class ObjectOptions(ParameterOptions):
       `position_origin_coords` should be specified.
     """
     
-    position_origin_coords: Optional[ndarray] = None
+    position_origin_coords: Optional[SerializableArray] = None
     """The user-specified origin coordinates of the object. To make this setting effective,
     `determine_position_origin_coords_by` should be set to `SPECIFIED`. 
     
@@ -494,41 +518,14 @@ class ObjectOptions(ParameterOptions):
         d = super().get_non_data_fields()
         del d["initial_guess"]
         return d
+
+    @field_validator("slice_spacings_m", "position_origin_coords", mode="before")
+    @classmethod
+    def _convert_array_like_fields_to_serializable_arrays(cls, value):
+        return _as_serializable_array(value)
     
     def check(self, options: "PtychographyTaskOptions"):
         super().check(options)
-        pos_y = options.probe_position_options.position_y_px
-        pos_x = options.probe_position_options.position_x_px
-        probe_shape = options.probe_options.initial_guess.shape[-2:]
-        obj_shape = options.object_options.initial_guess.shape[-2:]
-        min_size = [
-            int(ceil((pos_y.max() - pos_y.min() + probe_shape[-2]).item())) + 2,
-            int(ceil((pos_x.max() - pos_x.min() + probe_shape[-1]).item())) + 2,
-        ]
-        if any([min_size[i] > obj_shape[i] for i in range(2)]):
-            logging.warning(
-                f"An object tensor with a lateral size of at least {min_size} is "
-                "required to avoid padding when extracting/placing patches, but the provided "
-                f"object size is {list(options.object_options.initial_guess.shape[-2:])}."
-            )
-        if self.determine_position_origin_coords_by == enums.ObjectPosOriginCoordsMethods.SUPPORT:
-            buffer_center = torch.tensor(
-                [np.round(x / 2) + 0.5 for x in obj_shape]
-            )
-            if (
-                pos_y.max() + buffer_center[0] + probe_shape[-2] // 2 > obj_shape[-2]
-                or pos_y.min() + buffer_center[0] - probe_shape[-2] // 2 < 0
-                or pos_x.max() + buffer_center[1] + probe_shape[-1] // 2 > obj_shape[-1]
-                or pos_x.min() + buffer_center[1] - probe_shape[-1] // 2 < 0
-            ):
-                logging.warning(
-                    "`object_options.determine_center_coords_by` is set to `SUPPORT`. This assumes "
-                    "that the probe positions are approximately zero-centered, i.e., "
-                    "`-pos_y.min() ~ pos_y.max()` and `-pos_x.min() ~ pos_x.max()`. "
-                    "However, the given probe positions will cause the reconstructor to access pixels "
-                    "out of the object support. Please provide probe positions that are approximately "
-                    "zero-centered, or set `object_options.determine_center_coords_by` to `POSITIONS`."
-                )
         if self.determine_position_origin_coords_by == enums.ObjectPosOriginCoordsMethods.SPECIFIED:
             if self.position_origin_coords is None:
                 raise ValueError("`object_options.center_coords` should be specified when "
@@ -541,17 +538,11 @@ class ObjectOptions(ParameterOptions):
                     "`object_options.determine_center_coords_by` is not set to "
                     "`SPECIFIED`."
                 )
-                
-        if self.smoothness_constraint.enabled:
-            if self.smoothness_constraint.alpha > 1.0 / 8 or self.smoothness_constraint.alpha < 0:
-                raise ValueError(
-                    f"smoothness_constraint.alpha = {self.smoothness_constraint.alpha} is out of range [0, 1/8]."
-                )
-                
+
         if self.optimizer == enums.Optimizers.LBFGS and "Autodiff" not in options.__class__.__name__:
             raise ValueError("LBFGS optimizer is currently only supported for Autodiff reconstructors.")
 
-@dataclasses.dataclass
+@dataclass
 class ProbePowerConstraintOptions(FeatureOptions):
     """
     Settings for scaling the probe and object intensity.
@@ -561,7 +552,7 @@ class ProbePowerConstraintOptions(FeatureOptions):
 
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=OptimizationPlan)
 
-    probe_power: float = 0.0
+    probe_power: float = PydanticField(default=0.0, ge=0)
     """
     The target probe power. The intensity of the probe and optionally the object will be 
     scaled such that the power of the probe itself is `probe_power`.
@@ -573,7 +564,7 @@ class ProbePowerConstraintOptions(FeatureOptions):
     If False, only the probe is rescaled.
     """
 
-@dataclasses.dataclass
+@dataclass
 class ProbeOrthogonalizeIncoherentModesOptions(FeatureOptions):
     """
     Settings for orthogonalizing incoherent probe modes.
@@ -589,7 +580,7 @@ class ProbeOrthogonalizeIncoherentModesOptions(FeatureOptions):
     sort_by_occupancy: bool = False
     """If True, keep the probes sorted so that mode with highest occupancy is the 0th shared mode."""
 
-@dataclasses.dataclass
+@dataclass
 class ProbeOrthogonalizeOPRModesOptions(FeatureOptions):
     """
     Settings for orthogonalizing OPR modes.
@@ -600,7 +591,7 @@ class ProbeOrthogonalizeOPRModesOptions(FeatureOptions):
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=OptimizationPlan)
 
 
-@dataclasses.dataclass
+@dataclass
 class ProbeSupportConstraintOptions(FeatureOptions):
     """
     Settings for probe support constraint. The constraint applies shrinkwrapping, 
@@ -612,27 +603,32 @@ class ProbeSupportConstraintOptions(FeatureOptions):
 
     optimization_plan: OptimizationPlan = dataclasses.field(default_factory=OptimizationPlan)
     
-    fixed_probe_support: str = enums.ProbeSupportMethods.NONE
+    fixed_probe_support: enums.ProbeSupportMethods = enums.ProbeSupportMethods.NONE
     """
     If not `NONE`, a fixed probe support mask is generated and applied before shrinkwrapping.
     The mask is applied to each incoherent probe mode. Choices are: `ELLIPSE`, `RECTANGLE`.
     """
     
-    fixed_probe_support_params: Union[ndarray, Tensor] = None
+    fixed_probe_support_params: Optional[SerializableArray] = None
     """
     If using the use_fixed_probe_support option, define the center, widths, and heights
     for the ellipse/rectangle, format is:
     [center (rows), center (columns), side length (rows), side length (columns)]
     """
     
-    threshold: float = 0.005
+    threshold: float = PydanticField(default=0.005, ge=0)
     """
     The threshold for shrinkwrapping. The value of a pixel (x, y) is set to 0
     if `p(x, y) < [max(blur(p)) * `threshold`](x, y)`.
     """
 
+    @field_validator("fixed_probe_support_params", mode="before")
+    @classmethod
+    def _convert_fixed_probe_support_params_to_serializable_array(cls, value):
+        return _as_serializable_array(value)
 
-@dataclasses.dataclass
+
+@dataclass
 class ProbeCenterConstraintOptions(FeatureOptions):
     """
     Settings for constraining the probe's center of mass to the center of the probe array.
@@ -659,9 +655,42 @@ class ProbeCenterConstraintOptions(FeatureOptions):
     If True, each mode is shifted individually based on their own center of mass.
     """
 
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_center_options(cls, data):
+        values = _get_validation_values(data)
+        if values is not None:
+            use_intensity_for_com = values.get("use_intensity_for_com", False)
+            use_total_intensity_for_com = values.get("use_total_intensity_for_com", False)
+            center_modes_individually = values.get("center_modes_individually", False)
+            if use_intensity_for_com:
+                warnings.warn(
+                    "`probe_options.center_constraint.use_intensity_for_com` is deprecated; "
+                    "use `probe_options.center_constraint.use_total_intensity_for_com` instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                values["use_total_intensity_for_com"] = True
+                use_total_intensity_for_com = True
+            if center_modes_individually and use_total_intensity_for_com:
+                raise ValueError(
+                    "`probe_options.center_constraint.use_total_intensity_for_com` must be False when "
+                    "`probe_options.center_constraint.center_modes_individually` is True."
+                )
+        return data
+
+    @model_validator(mode="after")
+    def _validate_assignment_center_options(self):
+        if self.center_modes_individually and self.use_total_intensity_for_com:
+            raise ValueError(
+                "`probe_options.center_constraint.use_total_intensity_for_com` must be False when "
+                "`probe_options.center_constraint.center_modes_individually` is True."
+            )
+        return self
+
     def check(self, options: "task_options.PtychographyTaskOptions"):
         super().check(options)
-        if self.use_intensity_for_com:
+        if self.use_intensity_for_com and not self.use_total_intensity_for_com:
             warnings.warn(
                 "`probe_options.center_constraint.use_intensity_for_com` is deprecated; "
                 "use `probe_options.center_constraint.use_total_intensity_for_com` instead.",
@@ -669,14 +698,9 @@ class ProbeCenterConstraintOptions(FeatureOptions):
                 stacklevel=2,
             )
             self.use_total_intensity_for_com = True
-        if self.center_modes_individually and self.use_total_intensity_for_com:
-            raise ValueError(
-                "`probe_options.center_constraint.use_total_intensity_for_com` must be False when "
-                "`probe_options.center_constraint.center_modes_individually` is True."
-            )
 
 
-@dataclasses.dataclass
+@dataclass
 class ProbeOptions(ParameterOptions):
     """
     The probe configuration.
@@ -689,7 +713,7 @@ class ProbeOptions(ParameterOptions):
     - `OPRModeWeightsConfig` is given.
     """
 
-    initial_guess: Union[ndarray, Tensor] = None
+    initial_guess: Optional[DataArray] = None
     """A (n_opr_modes, n_modes, h, w) complex tensor of the probe initial guess."""
 
     power_constraint: ProbePowerConstraintOptions = field(
@@ -712,15 +736,13 @@ class ProbeOptions(ParameterOptions):
         default_factory=ProbeCenterConstraintOptions
     )
 
-    eigenmode_update_relaxation: float = 1.0
+    eigenmode_update_relaxation: float = PydanticField(default=1.0, ge=0, le=1)
     """
     A separate step size for eigenmode update.
     """
 
     def check(self, options: "task_options.PtychographyTaskOptions"):
         super().check(options)
-        if not (self.initial_guess is not None and self.initial_guess.ndim == 4):
-            raise ValueError("Probe initial_guess must be a (n_opr_modes, n_modes, h, w) tensor.")
         self.center_constraint.check(options)
         if self.power_constraint.enabled and options.object_options.remove_object_probe_ambiguity.enabled:
             logger.warning(
@@ -735,29 +757,49 @@ class ProbeOptions(ParameterOptions):
         del d["initial_guess"]
         return d
 
-@dataclasses.dataclass
+
+@dataclass
 class SynthesisDictLearnProbeOptions(Options):
     
-    d_mat: Union[ndarray, Tensor] = None
+    d_mat: Optional[SerializableArray] = None
     """The synthesis sparse dictionary matrix; contains the basis functions 
     that will be used to represent the probe via the sparse code weights."""
     
-    d_mat_conj_transpose: Union[ndarray, Tensor] = None
+    d_mat_conj_transpose: Optional[SerializableArray] = None
     """Conjugate transpose of the synthesis sparse dictionary matrix."""
     
-    d_mat_pinv: Union[ndarray, Tensor] = None
+    d_mat_pinv: Optional[SerializableArray] = None
     """Moore-Penrose pseudoinverse of the synthesis sparse dictionary matrix."""
     
-    probe_sparse_code: Union[ndarray, Tensor] = None
+    probe_sparse_code: Optional[SerializableArray] = None
     """Sparse code weights vector."""
     
-    probe_sparse_code_nnz: float = None
+    probe_sparse_code_nnz: Optional[float] = None
     """Number of non-zeros we will keep when enforcing sparsity constraint on
     the sparse code weights vector probe_sparse_code."""
     
     enabled: bool = False
 
-@dataclasses.dataclass
+    @field_validator(
+        "d_mat",
+        "d_mat_conj_transpose",
+        "d_mat_pinv",
+        "probe_sparse_code",
+        mode="before",
+    )
+    @classmethod
+    def _convert_array_like_fields_to_serializable_arrays(cls, value):
+        return _as_serializable_array(value)
+
+    def get_non_data_fields(self) -> dict:
+        d = super().get_non_data_fields()
+        del d["d_mat"]
+        del d["d_mat_conj_transpose"]
+        del d["d_mat_pinv"]
+        del d["probe_sparse_code"]
+        return d
+
+@dataclass
 class PositionCorrectionOptions(Options):
     """Options used for specifying the position correction function."""
 
@@ -771,16 +813,16 @@ class PositionCorrectionOptions(Options):
     `"FOURIER_SHIFT"` may offer better stability. `"NEAREST"` is not recommended.
     """
 
-    cross_correlation_scale: int = 20000
+    cross_correlation_scale: int = PydanticField(default=20000, ge=1)
     """The upsampling factor of the cross-correlation in real space."""
 
-    cross_correlation_real_space_width: float = 0.01
+    cross_correlation_real_space_width: float = PydanticField(default=0.01, gt=0)
     """The width of the cross-correlation in real-space"""
 
-    cross_correlation_probe_threshold: float = 0.1
+    cross_correlation_probe_threshold: float = PydanticField(default=0.1, ge=0)
     """The probe intensity threshold used to calculate the probe mask."""
     
-    slice_for_correction: int = None
+    slice_for_correction: Optional[int] = PydanticField(default=None, ge=0)
     """The object slice for which the position correction is calculated. If None, the middle slice
     is chosen.
     """
@@ -791,14 +833,14 @@ class PositionCorrectionOptions(Options):
     i.e., `min(update_magnitude_limit, 10 * MAD)`.
     """
     
-    update_magnitude_limit: Optional[float] = 0.1
+    update_magnitude_limit: Optional[float] = PydanticField(default=0.1, gt=0)
     """The maximum allowed magnitude of position update in each axis. Updates larger than this value 
     are clipped. Set to None or inf to disable the constraint. When `clip_update_magnitude_by_mad` is
     `True`, the actual limit will be set to the smaller of `update_magnitude_limit` and `10 * MAD`.
     """
     
 
-@dataclasses.dataclass
+@dataclass
 class PositionAffineTransformConstraintOptions(FeatureOptions):
     """Settings for imposing an affine transformation constraint on the probe positions.
     """
@@ -815,7 +857,7 @@ class PositionAffineTransformConstraintOptions(FeatureOptions):
     )
     """The degrees of freedom to include in the affine transformation."""
     
-    position_weight_update_interval: int = 10
+    position_weight_update_interval: int = PydanticField(default=10, ge=1)
     """The number of epochs between position weight updates.
     """
     
@@ -826,13 +868,13 @@ class PositionAffineTransformConstraintOptions(FeatureOptions):
     externally, but the positions are not altered.
     """
     
-    max_expected_error: float = 1.0
+    max_expected_error: float = PydanticField(default=1.0, gt=0)
     """The maximum expected position error, given in pixels. Note that this is different
     from `update_magnitude_limit`, and is only used in the estimation of friction in
     affine transformation constraint.
     """
     
-    override_update_flexibility: Optional[float] = None
+    override_update_flexibility: Optional[float] = PydanticField(default=None, ge=0, le=1)
     """If set, the update flexibility will be set to this value instead of being
     determined by the actual errors and max expected error. The value should be betweem
     0 and 1. If affine constraint is causing instability, setting this to a smaller value
@@ -846,29 +888,32 @@ class PositionAffineTransformConstraintOptions(FeatureOptions):
             return True
         else:
             return False
+
+    @field_validator("override_update_flexibility")
+    @classmethod
+    def _warn_override_update_flexibility(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None:
+            logging.warning(
+                f"`override_update_flexibility` is set to {value}. "
+                f"`max_expected_error` will be ignored."
+            )
+        return value
         
     def check(self, options: "task_options.PtychographyTaskOptions"):
         super().check(options)
-        if self.override_update_flexibility is not None:
-            if self.override_update_flexibility < 0 or self.override_update_flexibility > 1:
-                raise ValueError("`override_update_flexibility` should be between 0 and 1.")
-            logging.warning(
-                f"`override_update_flexibility` is set to {self.override_update_flexibility}. "
-                f"`max_expected_error` will be ignored."
-            )
 
 
-@dataclasses.dataclass
+@dataclass
 class ProbePositionOptions(ParameterOptions):
     optimizable: bool = False
     
     step_size: float = 0.3
     """The step size for probe position update."""
     
-    position_x_px: Union[ndarray, Tensor] = None
+    position_x_px: Optional[DataArray] = None
     """The x position in pixel."""
 
-    position_y_px: Union[ndarray, Tensor] = None
+    position_y_px: Optional[DataArray] = None
     """The y position in pixel."""
 
     constrain_position_mean: bool = False
@@ -896,24 +941,16 @@ class ProbePositionOptions(ParameterOptions):
         del d["position_x_px"]
         del d["position_y_px"]
         return d
-        
+
     def check(self, options: "task_options.PtychographyTaskOptions"):
         super().check(options)
-        if self.correction_options.update_magnitude_limit == 0:
-            raise ValueError(
-                "`probe_position_options.correction_options.update_magnitude_limit` is "
-                "set to 0. This will prevent the optimizer from performing any updates, but "
-                "will at the same time produce unstability. If you want to disable "
-                "position correction, set `optimizable` to `False`. To disable update "
-                "magnitude limit, set `update_magnitude_limit` to None or inf."
-            )
         self.affine_transform_constraint.check(options)
         
         if self.optimizer == enums.Optimizers.LBFGS and "Autodiff" not in options.__class__.__name__:
             raise ValueError("LBFGS optimizer is currently only supported for Autodiff reconstructors.")
 
 
-@dataclasses.dataclass
+@dataclass
 class OPRModeWeightsSmoothingOptions(FeatureOptions):
     """Settings for smoothing OPR mode weights."""
 
@@ -930,15 +967,15 @@ class OPRModeWeightsSmoothingOptions(FeatureOptions):
     POLYNOMIAL: fit the weights of each mode with a polynomial of selected degree.
     """
 
-    polynomial_degree: int = 4
+    polynomial_degree: int = PydanticField(default=4, ge=0)
     """
     The degree of the polynomial used for smoothing OPR mode weights.
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class OPRModeWeightsOptions(ParameterOptions):
-    initial_weights: Union[ndarray] = None
+    initial_weights: Optional[DataArray] = None
     """
     The initial weight(s) of the eigenmode(s). Acceptable values include the following:
 
@@ -975,10 +1012,38 @@ class OPRModeWeightsOptions(ParameterOptions):
         default_factory=OPRModeWeightsSmoothingOptions
     )
 
-    update_relaxation: float = 1.0
+    update_relaxation: float = PydanticField(default=1.0, ge=0, le=1)
     """
     A separate step size for eigenmode weight update.
     """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_optimization_switches(cls, data):
+        values = _get_validation_values(data)
+        if values is not None:
+            optimizable = values.get("optimizable", False)
+            optimize_intensity_variation = values.get("optimize_intensity_variation", False)
+            optimize_eigenmode_weights = values.get("optimize_eigenmode_weights", True)
+            if optimizable and not (optimize_intensity_variation or optimize_eigenmode_weights):
+                raise ValueError(
+                    "When OPRModeWeights is optimizable, at least 1 of "
+                    "optimize_intensity_variation and optimize_eigenmode_weights "
+                    "should be set to True."
+                )
+        return data
+
+    @model_validator(mode="after")
+    def _validate_assignment_optimization_switches(self):
+        if self.optimizable and not (
+            self.optimize_intensity_variation or self.optimize_eigenmode_weights
+        ):
+            raise ValueError(
+                "When OPRModeWeights is optimizable, at least 1 of "
+                "optimize_intensity_variation and optimize_eigenmode_weights "
+                "should be set to True."
+            )
+        return self
 
     def check(self, options: "task_options.PtychographyTaskOptions"):
         super().check(options)
@@ -989,34 +1054,6 @@ class OPRModeWeightsOptions(ParameterOptions):
                     "optimize_intensity_variation and optimize_eigenmode_weights "
                     "should be set to True."
                 )
-        n_opr_modes_in_probe = options.probe_options.initial_guess.shape[0]
-        if n_opr_modes_in_probe > 1:
-            if self.initial_weights is None:
-                raise ValueError(
-                    f"You have {n_opr_modes_in_probe} OPR modes in the probe initial guess, "
-                    "but initial OPR weights are not provided."
-                )
-            elif self.initial_weights.shape[-1] != n_opr_modes_in_probe:
-                raise ValueError(
-                    f"You have {n_opr_modes_in_probe} OPR modes in the probe initial guess, "
-                    f"but the number of modes in your provided OPR weights is {self.initial_weights.shape[-1]}."
-                )
-        else:
-            if self.initial_weights is None:
-                logging.info(
-                    "Unspecified OPR weight initial guess will be automatically populated with 1s."
-                )
-            elif self.initial_weights.shape[-1] != n_opr_modes_in_probe:
-                raise ValueError(
-                    f"You have {n_opr_modes_in_probe} OPR modes in the probe initial guess, "
-                    f"but the number of modes in your provided OPR weights is {self.initial_weights.shape[-1]}."
-                )
-        if self.initial_weights is not None and self.optimizable:
-            logging.warning(
-                "The default value of OPRModeWeightsOptions has been changed to False. "
-                "You have provided initial OPR weights, but optimizable is set to False. "
-                "Is this intended?"            
-            )
         if self.optimizer == enums.Optimizers.LBFGS and "Autodiff" not in options.__class__.__name__:
             raise ValueError("LBFGS optimizer is currently only supported for Autodiff reconstructors.")
 
@@ -1026,7 +1063,7 @@ class OPRModeWeightsOptions(ParameterOptions):
         return d
     
     
-@dataclasses.dataclass
+@dataclass
 class ForwardModelOptions(Options):
     low_memory_mode: bool = False
     """If True, forward propagation of ptychography will be done using less vectorized code.
@@ -1042,13 +1079,13 @@ class ForwardModelOptions(Options):
     """
 
 
-@dataclasses.dataclass
+@dataclass
 class ReconstructorOptions(Options):
     # This should be superseded by CorrectionPlan in ParameterConfig when it is there.
-    num_epochs: int = 100
+    num_epochs: int = PydanticField(default=100, ge=1)
     """The number of epochs to run."""
 
-    batch_size: int = 100
+    batch_size: int = PydanticField(default=100, ge=1)
     """The number of data to process in each minibatch."""
 
     batching_mode: enums.BatchingModes = enums.BatchingModes.RANDOM
@@ -1069,7 +1106,7 @@ class ReconstructorOptions(Options):
     `COMPACT`.
     """
 
-    compact_mode_update_clustering_stride: int = 1
+    compact_mode_update_clustering_stride: int = PydanticField(default=1, ge=1)
     """
     The number of epochs between updating clusters when `batching_mode` is `COMPACT` and
     `compact_mode_update_clustering` is `True`.
@@ -1119,6 +1156,6 @@ class ReconstructorOptions(Options):
         return enums.Reconstructors.base
 
 
-@dataclasses.dataclass
+@dataclass
 class TaskOptions(Options):
     pass

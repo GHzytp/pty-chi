@@ -18,6 +18,7 @@ import ptychi.api.enums as enums
 from ptychi.utils import (
     get_default_complex_dtype, 
     to_numpy, 
+    to_tensor,
     chunked_processing,
     get_probe_renormalization_factor
 )
@@ -196,9 +197,13 @@ class PlanarObject(Object):
         if self.is_multislice:
             if self.options.slice_spacings_m is None:
                 raise ValueError("slice_spacings_m must be specified for multislice objects.")
-            slice_spacings_m = self.options.slice_spacings_m
+            slice_spacings_m = to_tensor(
+                self.options.slice_spacings_m,
+                device=self.data.device,
+                dtype=torch.get_default_dtype(),
+            )
         else:
-            slice_spacings_m = torch.zeros(1)
+            slice_spacings_m = torch.zeros(1, device=self.data.device)
             
         self.slice_spacings = SliceSpacings(
             data=slice_spacings_m,
@@ -256,7 +261,11 @@ class PlanarObject(Object):
                     "`object_options.determine_center_coords_by` is set to "
                     "`SPECIFIED`."
                 )
-            self.pos_origin_coords = self.options.position_origin_coords
+            self.pos_origin_coords = torch.as_tensor(
+                self.options.position_origin_coords,
+                device=self.data.device,
+                dtype=torch.get_default_dtype(),
+            )
         else:
             raise ValueError(f"Invalid value for `determine_center_coords_by`: {self.options.determine_position_origin_coords_by}")
 

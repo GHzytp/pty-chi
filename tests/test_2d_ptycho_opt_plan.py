@@ -25,23 +25,23 @@ class Test2dPtychoOptPlan(tutils.TungstenDataTester):
         )
         
         options = LSQMLOptions()
-        options.data_options.data = data
+        diffraction_data = data
         
-        options.object_options.initial_guess = object_init
+        object_data = object_init
         options.object_options.pixel_size_m = pixel_size_m
         options.object_options.optimizable = True
         options.object_options.optimizer = api.Optimizers.SGD
         options.object_options.step_size = 1
         
-        options.probe_options.initial_guess = probe
+        probe_data = probe
         options.probe_options.optimizable = True
         options.probe_options.optimization_plan.start = 2
         options.probe_options.optimization_plan.stop = None
         options.probe_options.optimizer = api.Optimizers.SGD
         options.probe_options.step_size = 1
         
-        options.probe_position_options.position_x_px = positions_px[:, 1]
-        options.probe_position_options.position_y_px = positions_px[:, 0]
+        probe_position_x_px = positions_px[:, 1]
+        probe_position_y_px = positions_px[:, 0]
         options.probe_position_options.correction_options.update_magnitude_limit = 1.0
         options.probe_position_options.optimizable = True
         options.probe_position_options.optimization_plan.start = 1
@@ -50,7 +50,7 @@ class Test2dPtychoOptPlan(tutils.TungstenDataTester):
         options.probe_position_options.optimizer = api.Optimizers.ADAM
         options.probe_position_options.step_size = 1e-1
         
-        options.opr_mode_weight_options.initial_weights = np.array([1, 1e-6, 1e-6, 1e-6])
+        opr_mode_weights_data = np.array([1, 1e-6, 1e-6, 1e-6])
         options.opr_mode_weight_options.optimize_intensity_variation = True
         options.opr_mode_weight_options.optimizable = True
         
@@ -60,7 +60,15 @@ class Test2dPtychoOptPlan(tutils.TungstenDataTester):
         options.reconstructor_options.displayed_loss_function = api.LossFunctions.MSE_SQRT
         options.reconstructor_options.allow_nondeterministic_algorithms = False
         
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+            opr_mode_weights_data=opr_mode_weights_data,
+        )
         task.run()
             
         recon = task.get_data_to_cpu(name='object', as_numpy=True)[0]

@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 import ptychi.api as api
@@ -22,13 +23,9 @@ def test_object_hard_limits_magnitude_phase_plumbing_and_constraints():
     obj = PlanarObject(data=data, options=options.object_options)
 
     assert obj.options.hard_limits_magnitude_phase.enabled is True
-    assert torch.equal(
-        obj.options.hard_limits_magnitude_phase.abs_lim,
-        options.object_options.hard_limits_magnitude_phase.abs_lim,
-    )
-    assert torch.equal(
-        obj.options.hard_limits_magnitude_phase.phase_lim,
-        options.object_options.hard_limits_magnitude_phase.phase_lim,
+    assert obj.options.hard_limits_magnitude_phase.abs_lim == [0.5, 1.0]
+    assert obj.options.hard_limits_magnitude_phase.phase_lim == pytest.approx(
+        [float(-0.25 * torch.pi), float(0.25 * torch.pi)]
     )
 
     obj.constrain_hard_limits_magnitude_phase()

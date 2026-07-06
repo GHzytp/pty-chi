@@ -23,24 +23,31 @@ class TestLargeTensorOffload(tutils.BaseTester):
         positions = torch.linspace(-2, 2, steps=n_positions).cpu()
 
         options = api.LSQMLOptions()
-        options.data_options.data = data
+        diffraction_data = data
         options.data_options.save_data_on_device = True
 
-        options.object_options.initial_guess = object_guess
+        object_data = object_guess
         options.object_options.pixel_size_m = 1e-6
         options.object_options.optimizable = False
 
-        options.probe_options.initial_guess = probe_guess
+        probe_data = probe_guess
         options.probe_options.optimizable = False
 
-        options.probe_position_options.position_x_px = positions
-        options.probe_position_options.position_y_px = positions
+        probe_position_x_px = positions
+        probe_position_y_px = positions
         options.probe_position_options.optimizable = False
 
         options.reconstructor_options.batch_size = 2
         options.reconstructor_options.num_epochs = 1
 
-        task = PtychographyTask(options)
+        task = PtychographyTask(
+            options,
+            diffraction_data=diffraction_data,
+            object_data=object_data,
+            probe_data=probe_data,
+            probe_position_x_px=probe_position_x_px,
+            probe_position_y_px=probe_position_y_px,
+        )
         fm = task.reconstructor.forward_model
         indices = torch.arange(2, device="cuda", dtype=torch.long)
         fm.forward(indices)

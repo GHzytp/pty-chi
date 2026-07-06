@@ -8,6 +8,39 @@ live inside the task's reconstructor. The sections below highlight two
 workflow helpers that make day-to-day usage easier.
 
 
+Passing Reconstruction Data
+---------------------------
+
+Options contain reconstruction settings. Large arrays are passed directly to
+``PtychographyTask``:
+
+.. code-block:: python
+
+    task = api.PtychographyTask(
+        options,
+        diffraction_data=diffraction_data,
+        object_data=object_guess,
+        probe_data=probe_guess,
+        probe_position_x_px=positions_px[:, 1],
+        probe_position_y_px=positions_px[:, 0],
+        opr_mode_weights_data=opr_mode_weights,
+        valid_pixel_mask=valid_pixel_mask,
+    )
+
+``opr_mode_weights_data`` and ``valid_pixel_mask`` are optional. If OPR weights
+are omitted for a single-OPR-mode probe, the task initializes all weights to 1.
+If ``valid_pixel_mask`` is omitted or set to ``None``, all detector pixels are
+treated as valid.
+
+For compatibility, the previous option-held data fields still work during a
+transition period and emit ``DeprecationWarning`` when used:
+``data_options.data``, ``data_options.valid_pixel_mask``,
+``object_options.initial_guess``, ``probe_options.initial_guess``,
+``probe_position_options.position_x_px``,
+``probe_position_options.position_y_px``, and
+``opr_mode_weight_options.initial_weights``.
+
+
 Copying data from another task
 ------------------------------
 
@@ -19,7 +52,14 @@ instance:
 
 .. code-block:: python
 
-    warm_start_task = api.PtychographyTask(new_options)
+    warm_start_task = api.PtychographyTask(
+        new_options,
+        diffraction_data=diffraction_data,
+        object_data=object_guess,
+        probe_data=probe_guess,
+        probe_position_x_px=positions_px[:, 1],
+        probe_position_y_px=positions_px[:, 0],
+    )
     warm_start_task.copy_data_from_task(reference_task)
 
 Pass ``params_to_copy`` if you only want a subset of parameters. The method

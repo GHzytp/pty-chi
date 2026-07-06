@@ -26,22 +26,22 @@ class Test2dPtychoLsqmlMultiscan(tutils.TungstenDataTester):
         
         # Create task 1
         options_1 = api.LSQMLOptions()
-        options_1.data_options.data = data1
+        diffraction_data_1 = data1
         
-        options_1.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data_1 = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options_1.object_options.pixel_size_m = pixel_size_m
         options_1.object_options.optimizable = True
         options_1.object_options.optimizer = api.Optimizers.SGD
         options_1.object_options.step_size = 1
         options_1.object_options.build_preconditioner_with_all_modes = True
         
-        options_1.probe_options.initial_guess = probe
+        probe_data_1 = probe
         options_1.probe_options.optimizable = True
         options_1.probe_options.optimizer = api.Optimizers.SGD
         options_1.probe_options.step_size = 1
 
-        options_1.probe_position_options.position_x_px = positions_px_1[:, 1]
-        options_1.probe_position_options.position_y_px = positions_px_1[:, 0]
+        probe_position_x_px_1 = positions_px_1[:, 1]
+        probe_position_y_px_1 = positions_px_1[:, 0]
         options_1.probe_position_options.optimizable = False
         
         options_1.reconstructor_options.batch_size = 96
@@ -49,26 +49,33 @@ class Test2dPtychoLsqmlMultiscan(tutils.TungstenDataTester):
         options_1.reconstructor_options.num_epochs = 8
         options_1.reconstructor_options.allow_nondeterministic_algorithms = False
         
-        task_1 = PtychographyTask(options_1)
+        task_1 = PtychographyTask(
+            options_1,
+            diffraction_data=diffraction_data_1,
+            object_data=object_data_1,
+            probe_data=probe_data_1,
+            probe_position_x_px=probe_position_x_px_1,
+            probe_position_y_px=probe_position_y_px_1,
+        )
         
         # Create task 2
         options_2 = api.LSQMLOptions()
-        options_2.data_options.data = data2
+        diffraction_data_2 = data2
         
-        options_2.object_options.initial_guess = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
+        object_data_2 = torch.ones([1, *get_suggested_object_size(positions_px, probe.shape[-2:], extra=100)], dtype=get_default_complex_dtype())
         options_2.object_options.pixel_size_m = pixel_size_m
         options_2.object_options.optimizable = True
         options_2.object_options.optimizer = api.Optimizers.SGD
         options_2.object_options.step_size = 1
         options_2.object_options.build_preconditioner_with_all_modes = True
         
-        options_2.probe_options.initial_guess = probe
+        probe_data_2 = probe
         options_2.probe_options.optimizable = True
         options_2.probe_options.optimizer = api.Optimizers.SGD
         options_2.probe_options.step_size = 1
 
-        options_2.probe_position_options.position_x_px = positions_px_2[:, 1]
-        options_2.probe_position_options.position_y_px = positions_px_2[:, 0]
+        probe_position_x_px_2 = positions_px_2[:, 1]
+        probe_position_y_px_2 = positions_px_2[:, 0]
         options_2.probe_position_options.optimizable = False
         
         options_2.reconstructor_options.batch_size = 96
@@ -76,7 +83,14 @@ class Test2dPtychoLsqmlMultiscan(tutils.TungstenDataTester):
         options_2.reconstructor_options.num_epochs = 8
         options_2.reconstructor_options.allow_nondeterministic_algorithms = False
         
-        task_2 = PtychographyTask(options_2)
+        task_2 = PtychographyTask(
+            options_2,
+            diffraction_data=diffraction_data_2,
+            object_data=object_data_2,
+            probe_data=probe_data_2,
+            probe_position_x_px=probe_position_x_px_2,
+            probe_position_y_px=probe_position_y_px_2,
+        )
         
         # Disable progress bar for task 2
         task_2.reconstructor.pbar.disable = True

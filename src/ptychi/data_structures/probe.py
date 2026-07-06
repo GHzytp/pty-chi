@@ -386,11 +386,13 @@ class Probe(dsbase.ReconstructParameter):
         """
         data = self.data
         if self.options.support_constraint.fixed_probe_support == enums.ProbeSupportMethods.ELLIPSE:
+            params = utils.to_tensor(
+                self.options.support_constraint.fixed_probe_support_params,
+                device=data.device,
+                dtype=torch.get_default_dtype(),
+            )
             rows, cols = data.shape[-2:]
-            center_r = self.options.support_constraint.fixed_probe_support_params[0]
-            center_c = self.options.support_constraint.fixed_probe_support_params[1]
-            radius_r = self.options.support_constraint.fixed_probe_support_params[2]
-            radius_c = self.options.support_constraint.fixed_probe_support_params[3]
+            center_r, center_c, radius_r, radius_c = params
             y, x = torch.meshgrid(
                 torch.arange(rows, device=data.device), 
                 torch.arange(cols, device=data.device), 
@@ -398,13 +400,19 @@ class Probe(dsbase.ReconstructParameter):
             )
             data = data * (((y - center_r)**2 / radius_r**2) + ((x - center_c)**2 / radius_c**2) <= 1)
         elif self.options.support_constraint.fixed_probe_support == enums.ProbeSupportMethods.RECTANGLE:
+            params = utils.to_tensor(
+                self.options.support_constraint.fixed_probe_support_params,
+                device=data.device,
+                dtype=torch.get_default_dtype(),
+            )
             rows, cols = data.shape[-2:]
-            center_r = self.options.support_constraint.fixed_probe_support_params[0]
-            center_c = self.options.support_constraint.fixed_probe_support_params[1]
-            len_r = self.options.support_constraint.fixed_probe_support_params[2]
-            len_c = self.options.support_constraint.fixed_probe_support_params[3]
+            center_r, center_c, len_r, len_c = params
             fixed_support = torch.zeros(self.data.shape[-2:], device=data.device)
-            fixed_support[int(center_r - len_r) : int(center_r + len_r), int(center_c - len_c) : int(center_c + len_c)] = 1
+            row_start = int((center_r - len_r).item())
+            row_stop = int((center_r + len_r).item())
+            col_start = int((center_c - len_c).item())
+            col_stop = int((center_c + len_c).item())
+            fixed_support[row_start:row_stop, col_start:col_stop] = 1
             data = data * fixed_support
             
         mask = ip.gaussian_filter(data, sigma=3, size=5).abs()
@@ -523,9 +531,16 @@ class SynthesisDictLearnProbe( Probe ):
         self.build_optimizer()
 
     def get_dictionary(self):
-        dictionary_matrix = torch.tensor( self.options.experimental.sdl_probe_options.d_mat, dtype=torch.complex64 )
-        dictionary_matrix_pinv = torch.tensor( self.options.experimental.sdl_probe_options.d_mat_pinv, dtype=torch.complex64 )
-        dictionary_matrix_H = torch.tensor( self.options.experimental.sdl_probe_options.d_mat_conj_transpose, dtype=torch.complex64 )
+        sdl_options = self.options.experimental.sdl_probe_options
+        dictionary_matrix = utils.to_tensor(
+            sdl_options.d_mat, device=self.data.device, dtype=torch.complex64
+        )
+        dictionary_matrix_pinv = utils.to_tensor(
+            sdl_options.d_mat_pinv, device=self.data.device, dtype=torch.complex64
+        )
+        dictionary_matrix_H = utils.to_tensor(
+            sdl_options.d_mat_conj_transpose, device=self.data.device, dtype=torch.complex64
+        )
         return dictionary_matrix, dictionary_matrix_pinv, dictionary_matrix_H
 
     def get_sparse_code_weights(self):
