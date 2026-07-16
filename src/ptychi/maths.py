@@ -235,9 +235,11 @@ def orthogonalize_svd(
     return x.type(orig_dtype)
 
 
-def project(a, b, dim=None):
+def project(a, b, dim=None, eps=1e-5):
     """Return complex vector projection of a onto b for along given axis."""
-    projected_length = inner(a, b, dim=dim, keepdims=True) / inner(b, b, dim=dim, keepdims=True)
+    denominator = inner(b, b, dim=dim, keepdims=True)
+    denominator = torch.where(denominator == 0, torch.full_like(denominator, eps), denominator)
+    projected_length = inner(a, b, dim=dim, keepdims=True) / denominator
     return projected_length * b
 
 def inner(x, y, dim=None, keepdims=False):

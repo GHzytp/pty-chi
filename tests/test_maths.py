@@ -7,6 +7,17 @@ import test_utils as tutils
 
 
 class TestMaths(tutils.BaseTester):
+
+    def test_project_zero_denominator(self):
+        a = torch.tensor([[1 + 2j, 2], [3 + 4j, 4]], dtype=torch.complex128)
+        b = torch.tensor([[0.0, 0.0], [1e-100, 0.0]], dtype=torch.complex128)
+
+        projected = pmath.project(a, b, dim=-1)
+
+        torch.testing.assert_close(projected[0], torch.zeros(2, dtype=torch.complex128))
+        torch.testing.assert_close(
+            projected[1], torch.tensor([3 + 4j, 0], dtype=torch.complex128)
+        )
     
     def test_orthgonalize_gs(self):
         torch.manual_seed(123)
